@@ -21,7 +21,6 @@ const server = http.createServer((req, res) => {
 const wss = new WebSocketServer({ server });
 console.log(`[RuneServer] Starting on port ${PORT}`);
 
-// Item Database
 const ITEM_DB = {
   coins: { id: 'coins', name: 'Coins', icon: '🪙', buyPrice: 0, sellPrice: 1, stackable: true },
   bones: { id: 'bones', name: 'Bones', icon: '🦴', buyPrice: 10, sellPrice: 5, stackable: false },
@@ -44,7 +43,7 @@ const SHOP_STOCK = [
 const players = {};
 let groundItems = [];
 
-// Shopkeeper Bob is now positioned INSIDE the shop building at (36, 15)
+// Shopkeeper Bob inside the shop building at (36, 15)
 const npcs = [
   { id: 1, name: 'Goblin', x: 18, y: 28, targetX: 18, targetY: 28, hp: 12, maxHp: 12, level: 2, alive: true, respawnTicks: 0, type: 'monster' },
   { id: 2, name: 'Goblin Guard', x: 26, y: 30, targetX: 26, targetY: 30, hp: 20, maxHp: 20, level: 5, alive: true, respawnTicks: 0, type: 'monster' },
@@ -61,15 +60,10 @@ function broadcast(data) {
 function addItemToInventory(player, itemId, count = 1) {
   const itemInfo = ITEM_DB[itemId];
   if (!itemInfo) return false;
-
   if (itemInfo.stackable) {
     const existing = player.inventory.find(i => i && i.id === itemId);
-    if (existing) {
-      existing.count += count;
-      return true;
-    }
+    if (existing) { existing.count += count; return true; }
   }
-
   const emptyIndex = player.inventory.findIndex(slot => slot === null);
   if (emptyIndex !== -1) {
     player.inventory[emptyIndex] = { ...itemInfo, count };
@@ -78,15 +72,13 @@ function addItemToInventory(player, itemId, count = 1) {
   return false;
 }
 
-// Building collision check: Walls from x:32 to x:40, y:12 to y:18 (Doorway at x:36, y:18)
+// Building walls from x:32 to x:40, y:12 to y:18 (Doorway at x:36, y:18)
 function isWallTile(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
   if (tx >= 32 && tx <= 40 && ty >= 12 && ty <= 18) {
-    // Outer perimeter walls
     if (tx === 32 || tx === 40 || ty === 12 || ty === 18) {
-      // Allow entrance through the doorway at x:36, y:18
-      if (tx === 36 && ty === 18) return false;
+      if (tx === 36 && ty === 18) return false; // Doorway
       return true;
     }
   }
@@ -95,7 +87,6 @@ function isWallTile(x, y) {
 
 wss.on('connection', (ws) => {
   const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
-  
   const initialInv = Array(28).fill(null);
   initialInv[0] = { ...ITEM_DB.coins, count: 100 };
   initialInv[1] = { ...ITEM_DB.bread, count: 2 };
@@ -131,7 +122,7 @@ wss.on('connection', (ws) => {
           p.targetX = data.x;
           p.targetY = data.y;
         } else {
-          ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'A solid stone wall blocks your path!' }));
+          ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Stone walls block your path.' }));
         }
         p.action = null;
       } else if (data.type === 'ATTACK') {
@@ -140,8 +131,7 @@ wss.on('connection', (ws) => {
         const itemIdx = groundItems.findIndex(g => g.id === data.itemId);
         if (itemIdx !== -1) {
           const item = groundItems[itemIdx];
-          const dist = Math.hypot(p.x - item.x, p.y - item.y);
-          if (dist <= 1.5) {
+          if (Math.hypot(p.x - item.x, p.y - item.y) <= 1.5) {
             if (addItemToInventory(p, item.itemId, item.count)) {
               groundItems.splice(itemIdx, 1);
               broadcast({ type: 'GROUND_UPDATE', groundItems });
@@ -189,13 +179,11 @@ wss.on('connection', (ws) => {
   });
 });
 
-// 20-Tick Movement Loop
 setInterval(() => {
   const moveSpeed = 0.15;
   Object.values(players).forEach((p) => {
     if (Math.round(p.x) !== p.targetX || Math.round(p.y) !== p.targetY) {
-      let nextX = p.x;
-      let nextY = p.y;
+      let nextX = p.x, nextY = p.y;
       if (p.x < p.targetX) nextX = Math.min(p.targetX, p.x + moveSpeed);
       else if (p.x > p.targetX) nextX = Math.max(p.targetX, p.x - moveSpeed);
       if (p.y < p.targetY) nextY = Math.min(p.targetY, p.y + moveSpeed);
@@ -231,21 +219,17 @@ setInterval(() => {
   broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
 }, 50);
 
-// Combat Loop
 setInterval(() => {
   Object.values(players).forEach((p) => {
     if (p.action && p.action.type === 'ATTACK') {
       const npc = npcs.find((n) => n.id === p.action.targetId);
       if (npc && npc.alive && npc.type === 'monster') {
-        const dist = Math.hypot(p.x - npc.x, p.y - npc.y);
-        if (dist <= 1.5) {
+        if (Math.hypot(p.x - npc.x, p.y - npc.y) <= 1.5) {
           const hit = Math.floor(Math.random() * 5);
           npc.hp = Math.max(0, npc.hp - hit);
           p.isAttacking = true;
+          p.xp += Math.max(10, hit * 4);
 
-          const xpGained = Math.max(10, hit * 4);
-          p.xp += xpGained;
-          
           if (p.xp >= p.combatLvl * 50) {
             p.combatLvl++;
             p.maxHp += 2;
@@ -253,13 +237,7 @@ setInterval(() => {
             broadcast({ type: 'HITSPLAT', text: 'LEVEL UP!', x: Math.round(p.x), y: Math.round(p.y), color: '#ffff00' });
           }
 
-          broadcast({ 
-            type: 'HITSPLAT', 
-            text: hit === 0 ? '0' : `-${hit}`, 
-            x: Math.round(npc.x), 
-            y: Math.round(npc.y), 
-            color: hit === 0 ? '#888888' : '#ff3333' 
-          });
+          broadcast({ type: 'HITSPLAT', text: hit === 0 ? '0' : `-${hit}`, x: Math.round(npc.x), y: Math.round(npc.y), color: hit === 0 ? '#888888' : '#ff3333' });
 
           if (npc.hp <= 0) {
             npc.alive = false;
@@ -269,21 +247,18 @@ setInterval(() => {
             const drops = ['bones'];
             if (Math.random() < 0.7) drops.push('coins');
             if (Math.random() < 0.3) drops.push('goblin_hide');
-            if (Math.random() < 0.1) drops.push('fire_rune');
 
             drops.forEach(dropId => {
-              const count = dropId === 'coins' ? Math.floor(Math.random() * 20) + 5 : 1;
               groundItems.push({
                 id: 'item_' + Math.random().toString(36).substring(2, 9),
                 itemId: dropId,
                 name: ITEM_DB[dropId].name,
                 icon: ITEM_DB[dropId].icon,
-                count: count,
+                count: dropId === 'coins' ? 15 : 1,
                 x: Math.round(npc.x),
                 y: Math.round(npc.y)
               });
             });
-
             broadcast({ type: 'GROUND_UPDATE', groundItems });
           }
         } else {
@@ -299,6 +274,11 @@ setInterval(() => {
   });
 
   npcs.forEach((npc) => {
-    if (!npc.alive) {
-      npc.respawnTicks--;
-      if (
+    if (!npc.alive && --npc.respawnTicks <= 0) {
+      npc.alive = true;
+      npc.hp = npc.maxHp;
+    }
+  });
+}, 600);
+
+server.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
