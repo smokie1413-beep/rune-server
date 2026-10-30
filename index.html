@@ -3,14 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>RuneQuest 2D</title>
+<title>RuneQuest 2D - Character & Equipment</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0b0b0d; color: #fff; }
   #game-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #151d18; }
   canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 
-  /* Top Bar Header */
   #top-bar {
     position: absolute; top: 8px; left: 8px; right: 8px;
     display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10;
@@ -28,7 +27,6 @@
   }
   .btn-fullscreen:active { transform: scale(0.95); }
 
-  /* Virtual Joystick */
   #joystick-container {
     position: absolute; bottom: 20px; left: 20px;
     width: 110px; height: 110px; border-radius: 50%;
@@ -59,7 +57,7 @@
   /* Movable UI Windows */
   .ui-window {
     position: absolute;
-    width: 290px; max-height: 380px;
+    width: 290px; max-height: 420px;
     background: rgba(22, 18, 13, 0.95); border: 3px solid #6b5233; border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: none; flex-direction: column; z-index: 25;
     overflow: hidden; backdrop-filter: blur(4px);
@@ -67,8 +65,9 @@
   }
   .ui-window.active { display: flex; }
   
-  #inventory-win { bottom: 76px; right: 20px; }
-  #shop-win { bottom: 76px; right: 320px; }
+  #char-win { bottom: 76px; right: 20px; }
+  #inventory-win { bottom: 76px; right: 320px; }
+  #shop-win { bottom: 76px; right: 620px; }
 
   .ui-header {
     background: linear-gradient(90deg, #3d2d1b, #1e150b); padding: 8px 12px;
@@ -76,7 +75,29 @@
     font-weight: bold; color: #f8db83; font-size: 13px; cursor: move;
   }
   .ui-close { cursor: pointer; color: #a88a5a; font-size: 16px; }
-  .ui-body { padding: 10px; overflow-y: auto; max-height: 320px; }
+  .ui-body { padding: 12px; overflow-y: auto; max-height: 360px; font-size: 12px; }
+
+  /* Equipment Slots Grid */
+  .equip-grid {
+    display: flex; justify-content: space-around; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #3d2f1d;
+  }
+  .equip-slot {
+    width: 48px; height: 48px; background: #120e0a; border: 2px solid #5a4227; border-radius: 6px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; cursor: pointer;
+  }
+  .equip-slot .slot-label { position: absolute; bottom: 2px; font-size: 8px; color: #a88a5a; }
+  .equip-slot .item-icon { font-size: 24px; }
+
+  /* Stats List */
+  .stat-row {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #18130d; border: 1px solid #382816; padding: 6px 10px; border-radius: 4px; margin-bottom: 6px;
+  }
+  .stat-upgrade-btn {
+    background: #4a3720; border: 1px solid #f0c868; color: #f0c868;
+    padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: bold; cursor: pointer;
+  }
+  .stat-upgrade-btn:active { background: #f0c868; color: #000; }
 
   .grid-28 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .inv-slot {
@@ -97,7 +118,6 @@
     padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;
   }
 
-  /* Chat Box Positioned Next to Joystick */
   #chat-container {
     position: absolute; bottom: 20px; left: 145px; width: 240px; height: 100px;
     background: rgba(10, 8, 6, 0.85); border: 2px solid #4a3720; border-radius: 8px;
@@ -135,9 +155,63 @@
   </div>
 
   <div id="hud-tabs">
-    <button class="tab-btn" onclick="toggleWindow('inventory-win')">🎒</button>
+    <button class="tab-btn" onclick="toggleWindow('char-win')" title="Character & Equipment">👤</button>
+    <button class="tab-btn" onclick="toggleWindow('inventory-win')" title="Inventory">🎒</button>
   </div>
 
+  <!-- Character & Equipment Window -->
+  <div class="ui-window active" id="char-win">
+    <div class="ui-header" id="char-win-header">
+      <span>Character & Stats</span>
+      <span class="ui-close" onclick="toggleWindow('char-win')">✕</span>
+    </div>
+    <div class="ui-body">
+      <div style="margin-bottom: 10px; display: flex; gap: 6px; align-items: center;">
+        <span>Name:</span>
+        <input type="text" id="name-input" maxlength="12" style="background:#120e0a; border:1px solid #5a4227; color:#fff; padding:4px 6px; border-radius:4px; font-size:11px;" />
+        <button class="shop-btn" onclick="saveName()">Save</button>
+      </div>
+
+      <!-- Equipment Slots -->
+      <div class="equip-grid">
+        <div class="equip-slot" id="equip-head" onclick="unequipItem('head')">
+          <span class="slot-label">Head</span>
+        </div>
+        <div class="equip-slot" id="equip-weapon" onclick="unequipItem('weapon')">
+          <span class="slot-label">Weapon</span>
+        </div>
+        <div class="equip-slot" id="equip-shield" onclick="unequipItem('shield')">
+          <span class="slot-label">Shield</span>
+        </div>
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <span style="font-weight: bold; color: #f0c868;" id="stat-points-label">Stat Points: 0</span>
+      </div>
+
+      <!-- Stats List -->
+      <div id="stats-list">
+        <div class="stat-row">
+          <span>⚔️ Attack: <b id="stat-attack">1</b></span>
+          <button class="stat-upgrade-btn" onclick="upgradeStat('attack')">+</button>
+        </div>
+        <div class="stat-row">
+          <span>💪 Strength: <b id="stat-strength">1</b></span>
+          <button class="stat-upgrade-btn" onclick="upgradeStat('strength')">+</button>
+        </div>
+        <div class="stat-row">
+          <span>🛡️ Defense: <b id="stat-defense">1</b></span>
+          <button class="stat-upgrade-btn" onclick="upgradeStat('defense')">+</button>
+        </div>
+        <div class="stat-row">
+          <span>❤️ Hitpoints: <b id="stat-hitpoints">10</b></span>
+          <button class="stat-upgrade-btn" onclick="upgradeStat('hitpoints')">+</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inventory Window -->
   <div class="ui-window" id="inventory-win">
     <div class="ui-header" id="inventory-win-header">
       <span>Inventory (28)</span>
@@ -148,20 +222,21 @@
     </div>
   </div>
 
+  <!-- Shop Window -->
   <div class="ui-window" id="shop-win">
     <div class="ui-header" id="shop-win-header">
       <span>Bob's General Store</span>
       <span class="ui-close" onclick="toggleWindow('shop-win')">✕</span>
     </div>
     <div class="ui-body">
-      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap items to SELL, or buy below:</div>
+      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap inventory items to SELL, or buy below:</div>
       <div id="shop-items-list"></div>
     </div>
   </div>
 
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Welcome to RuneQuest 2D!</div>
+      <div class="msg system">Customize name & upgrade stats in the Character tab!</div>
     </div>
     <input type="text" id="chat-input" placeholder="Type message..." />
   </div>
@@ -181,7 +256,6 @@ const state = {
   popups: []
 };
 
-// Map Generation
 for (let y = 0; y < MAP_SIZE; y++) {
   const row = [];
   for (let x = 0; x < MAP_SIZE; x++) {
@@ -217,8 +291,10 @@ socket.onmessage = (event) => {
       state.npcs = data.npcs || [];
       state.groundItems = data.groundItems || [];
       state.shopStock = data.shopStock || [];
-      renderInventory();
-      renderShop();
+      if (state.players[state.playerId]) {
+        document.getElementById('name-input').value = state.players[state.playerId].name;
+      }
+      renderUI();
     } else if (data.type === 'TICK_UPDATE') {
       state.players = data.players || {};
       state.npcs = data.npcs || [];
@@ -227,7 +303,7 @@ socket.onmessage = (event) => {
         const me = state.players[state.playerId];
         document.getElementById('player-name-hud').innerText = me.name;
         document.getElementById('player-stats-hud').innerText = `Lvl: ${me.combatLvl} | HP: ${me.hp}/${me.maxHp} | XP: ${me.xp}`;
-        renderInventory();
+        renderUI();
       }
     } else if (data.type === 'GROUND_UPDATE') {
       state.groundItems = data.groundItems || [];
@@ -266,80 +342,47 @@ function toggleWindow(id) {
   document.getElementById(id).classList.toggle('active');
 }
 
-// DRAGGABLE WINDOW SYSTEM
-function makeDraggable(elmnt, header) {
-  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-  
-  header.onmousedown = dragMouseDown;
-  header.ontouchstart = dragTouchStart;
-
-  function dragMouseDown(e) {
-    e.preventDefault();
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    document.onmouseup = closeDragElement;
-    document.onmousemove = elementDrag;
-    bringToFront(elmnt);
-  }
-
-  function elementDrag(e) {
-    e.preventDefault();
-    pos1 = pos3 - e.clientX;
-    pos2 = pos4 - e.clientY;
-    pos3 = e.clientX;
-    pos4 = e.clientY;
-    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
-    elmnt.style.bottom = 'auto';
-    elmnt.style.right = 'auto';
-  }
-
-  function closeDragElement() {
-    document.onmouseup = null;
-    document.onmousemove = null;
-  }
-
-  function dragTouchStart(e) {
-    const touch = e.touches[0];
-    pos3 = touch.clientX;
-    pos4 = touch.clientY;
-    document.ontouchend = closeTouchDragElement;
-    document.ontouchmove = elementTouchDrag;
-    bringToFront(elmnt);
-  }
-
-  function elementTouchDrag(e) {
-    const touch = e.touches[0];
-    pos1 = pos3 - touch.clientX;
-    pos2 = pos4 - touch.clientY;
-    pos3 = touch.clientX;
-    pos4 = touch.clientY;
-    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
-    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
-    elmnt.style.bottom = 'auto';
-    elmnt.style.right = 'auto';
-  }
-
-  function closeTouchDragElement() {
-    document.ontouchend = null;
-    document.ontouchmove = null;
+function saveName() {
+  const newName = document.getElementById('name-input').value.trim();
+  if (newName) {
+    socket.send(JSON.stringify({ type: 'SET_NAME', name: newName }));
+    addChat(`Character name updated to ${newName}`, 'system');
   }
 }
 
-let topZIndex = 25;
-function bringToFront(elmnt) {
-  topZIndex++;
-  elmnt.style.zIndex = topZIndex;
+function upgradeStat(statName) {
+  socket.send(JSON.stringify({ type: 'UPGRADE_STAT', stat: statName }));
 }
 
-makeDraggable(document.getElementById("inventory-win"), document.getElementById("inventory-win-header"));
-makeDraggable(document.getElementById("shop-win"), document.getElementById("shop-win-header"));
+function unequipItem(slotName) {
+  socket.send(JSON.stringify({ type: 'UNEQUIP_ITEM', slotName: slotName }));
+}
 
-function renderInventory() {
+function renderUI() {
   if (!state.playerId || !state.players[state.playerId]) return;
+  const me = state.players[state.playerId];
+
+  // Render Stats & Points
+  document.getElementById('stat-points-label').innerText = `Stat Points: ${me.statPoints}`;
+  document.getElementById('stat-attack').innerText = me.stats.attack;
+  document.getElementById('stat-strength').innerText = me.stats.strength;
+  document.getElementById('stat-defense').innerText = me.stats.defense;
+  document.getElementById('stat-hitpoints').innerText = me.stats.hitpoints;
+
+  // Render Equipment
+  ['head', 'weapon', 'shield'].forEach(slot => {
+    const slotEl = document.getElementById(`equip-${slot}`);
+    const item = me.equipment[slot];
+    slotEl.innerHTML = `<span class="slot-label">${slot.charAt(0).toUpperCase() + slot.slice(1)}</span>`;
+    if (item) {
+      slotEl.innerHTML += `<span class="item-icon">${item.icon}</span>`;
+    }
+  });
+
+  // Render Inventory
   const grid = document.getElementById('inventory-grid');
   grid.innerHTML = '';
-  state.players[state.playerId].inventory.forEach((item, index) => {
+  me.inventory.forEach((item, index) => {
     const el = document.createElement('div');
     el.className = 'inv-slot';
     if (item) {
@@ -347,14 +390,15 @@ function renderInventory() {
       el.onclick = () => {
         if (document.getElementById('shop-win').classList.contains('active')) {
           socket.send(JSON.stringify({ type: 'SELL_ITEM', slotIndex: index }));
+        } else if (item.slot) {
+          socket.send(JSON.stringify({ type: 'EQUIP_ITEM', slotIndex: index }));
         }
       };
     }
     grid.appendChild(el);
   });
-}
 
-function renderShop() {
+  // Render Shop
   const shopContainer = document.getElementById('shop-items-list');
   shopContainer.innerHTML = '';
   state.shopStock.forEach(item => {
@@ -365,7 +409,66 @@ function renderShop() {
   });
 }
 
-// --- VIRTUAL JOYSTICK CONTROLS ---
+// Draggable Window System
+function makeDraggable(elmnt, header) {
+  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+  header.onmousedown = dragMouseDown;
+  header.ontouchstart = dragTouchStart;
+
+  function dragMouseDown(e) {
+    e.preventDefault();
+    pos3 = e.clientX; pos4 = e.clientY;
+    document.onmouseup = closeDragElement;
+    document.onmousemove = elementDrag;
+    bringToFront(elmnt);
+  }
+
+  function elementDrag(e) {
+    e.preventDefault();
+    pos1 = pos3 - e.clientX; pos2 = pos4 - e.clientY;
+    pos3 = e.clientX; pos4 = e.clientY;
+    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+    elmnt.style.bottom = 'auto'; elmnt.style.right = 'auto';
+  }
+
+  function closeDragElement() {
+    document.onmouseup = null; document.onmousemove = null;
+  }
+
+  function dragTouchStart(e) {
+    const touch = e.touches[0];
+    pos3 = touch.clientX; pos4 = touch.clientY;
+    document.ontouchend = closeTouchDragElement;
+    document.ontouchmove = elementTouchDrag;
+    bringToFront(elmnt);
+  }
+
+  function elementTouchDrag(e) {
+    const touch = e.touches[0];
+    pos1 = pos3 - touch.clientX; pos2 = pos4 - touch.clientY;
+    pos3 = touch.clientX; pos4 = touch.clientY;
+    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+    elmnt.style.bottom = 'auto'; elmnt.style.right = 'auto';
+  }
+
+  function closeTouchDragElement() {
+    document.ontouchend = null; document.ontouchmove = null;
+  }
+}
+
+let topZIndex = 25;
+function bringToFront(elmnt) {
+  topZIndex++;
+  elmnt.style.zIndex = topZIndex;
+}
+
+makeDraggable(document.getElementById("char-win"), document.getElementById("char-win-header"));
+makeDraggable(document.getElementById("inventory-win"), document.getElementById("inventory-win-header"));
+makeDraggable(document.getElementById("shop-win"), document.getElementById("shop-win-header"));
+
+// Virtual Joystick
 const joystickContainer = document.getElementById('joystick-container');
 const joystickKnob = document.getElementById('joystick-knob');
 let joystickActive = false;
@@ -376,9 +479,7 @@ const maxRadius = 30;
 function handleJoystickStart(clientX, clientY) {
   joystickActive = true;
   updateJoystick(clientX, clientY);
-  if (!joystickInterval) {
-    joystickInterval = setInterval(sendJoystickMove, 120);
-  }
+  if (!joystickInterval) joystickInterval = setInterval(sendJoystickMove, 120);
 }
 
 function handleJoystickMove(clientX, clientY) {
@@ -389,26 +490,16 @@ function handleJoystickMove(clientX, clientY) {
 function handleJoystickEnd() {
   joystickActive = false;
   joystickKnob.style.transform = `translate(0px, 0px)`;
-  if (joystickInterval) {
-    clearInterval(joystickInterval);
-    joystickInterval = null;
-  }
+  if (joystickInterval) { clearInterval(joystickInterval); joystickInterval = null; }
 }
 
 function updateJoystick(clientX, clientY) {
   const rect = joystickContainer.getBoundingClientRect();
   const centerX = rect.left + rect.width / 2;
   const centerY = rect.top + rect.height / 2;
-  
-  let dx = clientX - centerX;
-  let dy = clientY - centerY;
+  let dx = clientX - centerX, dy = clientY - centerY;
   const distance = Math.hypot(dx, dy);
-
-  if (distance > maxRadius) {
-    dx = (dx / distance) * maxRadius;
-    dy = (dy / distance) * maxRadius;
-  }
-
+  if (distance > maxRadius) { dx = (dx / distance) * maxRadius; dy = (dy / distance) * maxRadius; }
   joystickKnob.style.transform = `translate(${dx}px, ${dy}px)`;
   joyAngle = Math.atan2(dy, dx);
 }
@@ -416,9 +507,7 @@ function updateJoystick(clientX, clientY) {
 function sendJoystickMove() {
   if (!joystickActive || !state.playerId || !state.players[state.playerId]) return;
   const me = state.players[state.playerId];
-  const targetX = Math.round(me.x + Math.cos(joyAngle) * 2);
-  const targetY = Math.round(me.y + Math.sin(joyAngle) * 2);
-  socket.send(JSON.stringify({ type: 'MOVE', x: targetX, y: targetY }));
+  socket.send(JSON.stringify({ type: 'MOVE', x: Math.round(me.x + Math.cos(joyAngle) * 2), y: Math.round(me.y + Math.sin(joyAngle) * 2) }));
 }
 
 joystickContainer.addEventListener('touchstart', (e) => { handleJoystickStart(e.touches[0].clientX, e.touches[0].clientY); e.preventDefault(); }, { passive: false });
@@ -437,10 +526,7 @@ canvas.addEventListener('click', (e) => {
   const worldY = (e.clientY - rect.top + (me.y * TILE_PX - canvas.height / 2)) / TILE_PX;
 
   const clickedGround = state.groundItems.find(g => Math.hypot(g.x - worldX, g.y - worldY) < 0.8);
-  if (clickedGround) {
-    socket.send(JSON.stringify({ type: 'PICKUP', itemId: clickedGround.id }));
-    return;
-  }
+  if (clickedGround) { socket.send(JSON.stringify({ type: 'PICKUP', itemId: clickedGround.id })); return; }
 
   const clickedNpc = state.npcs.find(n => n.alive && Math.hypot(n.x - worldX, n.y - worldY) < 1.0);
   if (clickedNpc) {
