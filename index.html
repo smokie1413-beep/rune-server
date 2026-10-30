@@ -1,0 +1,3 @@
+// Automatically uses wss:// or ws:// depending on how the page is loaded
+const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+const socket = new WebSocket(protocol + window.location.host);
