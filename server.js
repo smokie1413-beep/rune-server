@@ -22,14 +22,14 @@ const wss = new WebSocketServer({ server });
 console.log(`[RuneServer] Starting on port ${PORT}`);
 
 const ITEM_DB = {
-  coins: { id: 'coins', name: 'Coins', icon: '🪙', buyPrice: 0, sellPrice: 1, stackable: true },
-  bones: { id: 'bones', name: 'Bones', icon: '🦴', buyPrice: 10, sellPrice: 5, stackable: false },
-  goblin_hide: { id: 'goblin_hide', name: 'Goblin Hide', icon: '📜', buyPrice: 25, sellPrice: 12, stackable: false },
-  bread: { id: 'bread', name: 'Bread', icon: '🍞', buyPrice: 12, sellPrice: 6, stackable: false },
-  iron_sword: { id: 'iron_sword', name: 'Iron Sword', icon: '🗡️', buyPrice: 150, sellPrice: 75, stackable: false },
-  bronze_helm: { id: 'bronze_helm', name: 'Bronze Helm', icon: '🪖', buyPrice: 80, sellPrice: 40, stackable: false },
-  wooden_shield: { id: 'wooden_shield', name: 'Wooden Shield', icon: '🛡️', buyPrice: 110, sellPrice: 55, stackable: false },
-  fire_rune: { id: 'fire_rune', name: 'Fire Rune', icon: '🔥', buyPrice: 15, sellPrice: 7, stackable: true }
+  coins: { id: 'coins', name: 'Coins', icon: '🪙', buyPrice: 0, sellPrice: 1, stackable: true, slot: null },
+  bones: { id: 'bones', name: 'Bones', icon: '🦴', buyPrice: 10, sellPrice: 5, stackable: false, slot: null },
+  goblin_hide: { id: 'goblin_hide', name: 'Goblin Hide', icon: '📜', buyPrice: 25, sellPrice: 12, stackable: false, slot: null },
+  bread: { id: 'bread', name: 'Bread', icon: '🍞', buyPrice: 12, sellPrice: 6, stackable: false, slot: null },
+  iron_sword: { id: 'iron_sword', name: 'Iron Sword', icon: '🗡️', buyPrice: 150, sellPrice: 75, stackable: false, slot: 'weapon' },
+  bronze_helm: { id: 'bronze_helm', name: 'Bronze Helm', icon: '🪖', buyPrice: 80, sellPrice: 40, stackable: false, slot: 'head' },
+  wooden_shield: { id: 'wooden_shield', name: 'Wooden Shield', icon: '🛡️', buyPrice: 110, sellPrice: 55, stackable: false, slot: 'shield' },
+  fire_rune: { id: 'fire_rune', name: 'Fire Rune', icon: '🔥', buyPrice: 15, sellPrice: 7, stackable: true, slot: null }
 };
 
 const SHOP_STOCK = [
@@ -43,7 +43,6 @@ const SHOP_STOCK = [
 const players = {};
 let groundItems = [];
 
-// Shopkeeper Bob inside the shop building at (36, 15)
 const npcs = [
   { id: 1, name: 'Goblin', x: 18, y: 28, targetX: 18, targetY: 28, hp: 12, maxHp: 12, level: 2, alive: true, respawnTicks: 0, type: 'monster' },
   { id: 2, name: 'Goblin Guard', x: 26, y: 30, targetX: 26, targetY: 30, hp: 20, maxHp: 20, level: 5, alive: true, respawnTicks: 0, type: 'monster' },
@@ -72,13 +71,12 @@ function addItemToInventory(player, itemId, count = 1) {
   return false;
 }
 
-// Building walls from x:32 to x:40, y:12 to y:18 (Doorway at x:36, y:18)
 function isWallTile(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
   if (tx >= 32 && tx <= 40 && ty >= 12 && ty <= 18) {
     if (tx === 32 || tx === 40 || ty === 12 || ty === 18) {
-      if (tx === 36 && ty === 18) return false; // Doorway
+      if (tx === 36 && ty === 18) return false;
       return true;
     }
   }
@@ -102,9 +100,11 @@ wss.on('connection', (ws) => {
     maxHp: 20,
     combatLvl: 3,
     xp: 0,
+    statPoints: 0,
+    stats: { attack: 1, strength: 1, defense: 1, ranged: 1, magic: 1, hitpoints: 10 },
+    equipment: { head: null, weapon: null, shield: null },
     inventory: initialInv,
     action: null,
-    facing: 'down',
     isAttacking: false
   };
 
@@ -121,12 +121,47 @@ wss.on('connection', (ws) => {
         if (!isWallTile(data.x, data.y)) {
           p.targetX = data.x;
           p.targetY = data.y;
-        } else {
-          ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Stone walls block your path.' }));
         }
         p.action = null;
       } else if (data.type === 'ATTACK') {
         p.action = { type: 'ATTACK', targetId: data.targetId };
+      } else if (data.type === 'SET_NAME') {
+        if (typeof data.name === 'string' && data.name.trim().length > 0) {
+          p.name = data.name.trim().substring(0, 12);
+          broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
+        }
+      } else if (data.type === 'UPGRADE_STAT') {
+        const statName = data.stat;
+        if (p.statPoints > 0 && p.stats[statName] !== undefined) {
+          p.statPoints--;
+          p.stats[statName]++;
+          if (statName === 'hitpoints') {
+            p.maxHp += 2;
+            p.hp = p.maxHp;
+          }
+          broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
+        }
+      } else if (data.type === 'EQUIP_ITEM') {
+        const slotIdx = data.slotIndex;
+        const item = p.inventory[slotIdx];
+        if (item && item.slot) {
+          const equipSlot = item.slot;
+          const currentEquipped = p.equipment[equipSlot];
+          p.equipment[equipSlot] = item;
+          p.inventory[slotIdx] = currentEquipped;
+          broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
+        }
+      } else if (data.type === 'UNEQUIP_ITEM') {
+        const slotName = data.slotName;
+        const item = p.equipment[slotName];
+        if (item) {
+          if (addItemToInventory(p, item.id, item.count || 1)) {
+            p.equipment[slotName] = null;
+            broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
+          } else {
+            ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Inventory is full!' }));
+          }
+        }
       } else if (data.type === 'PICKUP') {
         const itemIdx = groundItems.findIndex(g => g.id === data.itemId);
         if (itemIdx !== -1) {
@@ -146,7 +181,6 @@ wss.on('connection', (ws) => {
           const goldAmount = slotItem.sellPrice * (slotItem.count || 1);
           p.inventory[data.slotIndex] = null;
           addItemToInventory(p, 'coins', goldAmount);
-          broadcast({ type: 'HITSPLAT', text: `+${goldAmount}g`, x: Math.round(p.x), y: Math.round(p.y), color: '#ffff00' });
         }
       } else if (data.type === 'BUY_ITEM') {
         const buyItem = ITEM_DB[data.itemId];
@@ -159,12 +193,7 @@ wss.on('connection', (ws) => {
                 const coinIndex = p.inventory.findIndex(i => i && i.id === 'coins');
                 if (coinIndex !== -1) p.inventory[coinIndex] = null;
               }
-              broadcast({ type: 'HITSPLAT', text: `-${buyItem.buyPrice}g`, x: Math.round(p.x), y: Math.round(p.y), color: '#ffaaaa' });
-            } else {
-              ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Inventory is full!' }));
             }
-          } else {
-            ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Not enough coins!' }));
           }
         }
       } else if (data.type === 'CHAT') {
@@ -225,15 +254,14 @@ setInterval(() => {
       const npc = npcs.find((n) => n.id === p.action.targetId);
       if (npc && npc.alive && npc.type === 'monster') {
         if (Math.hypot(p.x - npc.x, p.y - npc.y) <= 1.5) {
-          const hit = Math.floor(Math.random() * 5);
+          const hit = Math.floor(Math.random() * 5) + Math.floor(p.stats.strength / 3);
           npc.hp = Math.max(0, npc.hp - hit);
           p.isAttacking = true;
           p.xp += Math.max(10, hit * 4);
 
           if (p.xp >= p.combatLvl * 50) {
             p.combatLvl++;
-            p.maxHp += 2;
-            p.hp = p.maxHp;
+            p.statPoints += 3; // Award 3 stat points per level up
             broadcast({ type: 'HITSPLAT', text: 'LEVEL UP!', x: Math.round(p.x), y: Math.round(p.y), color: '#ffff00' });
           }
 
