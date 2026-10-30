@@ -4,6 +4,26 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = process.env.PORT || 3000;
+const SAVE_FILE = path.join(__dirname, 'players.json');
+
+// Load saved players database from disk if it exists
+let savedAccounts = {};
+if (fs.existsSync(SAVE_FILE)) {
+  try {
+    savedAccounts = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8'));
+    console.log('[RuneServer] Loaded saved player accounts from disk.');
+  } catch (err) {
+    console.error('[RuneServer] Error parsing players.json:', err);
+  }
+}
+
+function saveAccountsToDisk() {
+  try {
+    fs.writeFileSync(SAVE_FILE, JSON.stringify(savedAccounts, null, 2), 'utf8');
+  } catch (err) {
+    console.error('[RuneServer] Error saving accounts:', err);
+  }
+}
 
 const server = http.createServer((req, res) => {
   const filePath = path.join(__dirname, 'index.html');
@@ -83,30 +103,52 @@ function isWallTile(x, y) {
   return false;
 }
 
-wss.on('connection', (ws) => {
-  const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
-  const initialInv = Array(28).fill(null);
-  initialInv[0] = { ...ITEM_DB.coins, count: 100 };
-  initialInv[1] = { ...ITEM_DB.bread, count: 2 };
+wss.on('connection', (ws, req) => {
+  // Extract client IP address (handles Render proxy headers or local requests)
+  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown_ip';
+  const cleanIp = clientIp.split(',')[0].trim();
+  console.log(`[RuneServer] Connection from IP: ${cleanIp}`);
 
-  players[playerId] = {
-    id: playerId,
-    name: `Hero_${playerId.substring(7)}`,
-    x: 22.0,
-    y: 22.0,
-    targetX: 22,
-    targetY: 22,
-    hp: 20,
-    maxHp: 20,
-    combatLvl: 3,
-    xp: 0,
-    statPoints: 0,
-    stats: { attack: 1, strength: 1, defense: 1, ranged: 1, magic: 1, hitpoints: 10 },
-    equipment: { head: null, weapon: null, shield: null },
-    inventory: initialInv,
-    action: null,
-    isAttacking: false
-  };
+  const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
+
+  // Check if saved account exists for this IP
+  let playerData;
+  if (savedAccounts[cleanIp]) {
+    playerData = savedAccounts[cleanIp];
+    playerData.id = playerId; // Assign new live socket ID
+    playerData.targetX = Math.round(playerData.x);
+    playerData.targetY = Math.round(playerData.y);
+    console.log(`[RuneServer] Restored saved character for IP ${cleanIp}: ${playerData.name}`);
+  } else {
+    // Brand new player profile
+    const initialInv = Array(28).fill(null);
+    initialInv[0] = { ...ITEM_DB.coins, count: 100 };
+    initialInv[1] = { ...ITEM_DB.bread, count: 2 };
+
+    playerData = {
+      id: playerId,
+      ip: cleanIp,
+      name: `Hero_${playerId.substring(7)}`,
+      x: 22.0,
+      y: 22.0,
+      targetX: 22,
+      targetY: 22,
+      hp: 20,
+      maxHp: 20,
+      combatLvl: 3,
+      xp: 0,
+      statPoints: 0,
+      stats: { attack: 1, strength: 1, defense: 1, ranged: 1, magic: 1, hitpoints: 10 },
+      equipment: { head: null, weapon: null, shield: null },
+      inventory: initialInv,
+      action: null,
+      isAttacking: false
+    };
+    savedAccounts[cleanIp] = playerData;
+    saveAccountsToDisk();
+  }
+
+  players[playerId] = playerData;
 
   ws.send(JSON.stringify({ type: 'INIT', id: playerId, players, npcs, groundItems, shopStock: SHOP_STOCK }));
   broadcast({ type: 'PLAYER_JOINED', player: players[playerId] });
@@ -128,6 +170,8 @@ wss.on('connection', (ws) => {
       } else if (data.type === 'SET_NAME') {
         if (typeof data.name === 'string' && data.name.trim().length > 0) {
           p.name = data.name.trim().substring(0, 12);
+          savedAccounts[cleanIp] = p;
+          saveAccountsToDisk();
           broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
         }
       } else if (data.type === 'UPGRADE_STAT') {
@@ -139,6 +183,8 @@ wss.on('connection', (ws) => {
             p.maxHp += 2;
             p.hp = p.maxHp;
           }
+          savedAccounts[cleanIp] = p;
+          saveAccountsToDisk();
           broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
         }
       } else if (data.type === 'EQUIP_ITEM') {
@@ -149,6 +195,8 @@ wss.on('connection', (ws) => {
           const currentEquipped = p.equipment[equipSlot];
           p.equipment[equipSlot] = item;
           p.inventory[slotIdx] = currentEquipped;
+          savedAccounts[cleanIp] = p;
+          saveAccountsToDisk();
           broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
         }
       } else if (data.type === 'UNEQUIP_ITEM') {
@@ -157,6 +205,8 @@ wss.on('connection', (ws) => {
         if (item) {
           if (addItemToInventory(p, item.id, item.count || 1)) {
             p.equipment[slotName] = null;
+            savedAccounts[cleanIp] = p;
+            saveAccountsToDisk();
             broadcast({ type: 'TICK_UPDATE', players, npcs, groundItems });
           } else {
             ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Inventory is full!' }));
@@ -169,6 +219,8 @@ wss.on('connection', (ws) => {
           if (Math.hypot(p.x - item.x, p.y - item.y) <= 1.5) {
             if (addItemToInventory(p, item.itemId, item.count)) {
               groundItems.splice(itemIdx, 1);
+              savedAccounts[cleanIp] = p;
+              saveAccountsToDisk();
               broadcast({ type: 'GROUND_UPDATE', groundItems });
             } else {
               ws.send(JSON.stringify({ type: 'SERVER_MSG', text: 'Inventory is full!' }));
@@ -181,6 +233,8 @@ wss.on('connection', (ws) => {
           const goldAmount = slotItem.sellPrice * (slotItem.count || 1);
           p.inventory[data.slotIndex] = null;
           addItemToInventory(p, 'coins', goldAmount);
+          savedAccounts[cleanIp] = p;
+          saveAccountsToDisk();
         }
       } else if (data.type === 'BUY_ITEM') {
         const buyItem = ITEM_DB[data.itemId];
@@ -193,6 +247,8 @@ wss.on('connection', (ws) => {
                 const coinIndex = p.inventory.findIndex(i => i && i.id === 'coins');
                 if (coinIndex !== -1) p.inventory[coinIndex] = null;
               }
+              savedAccounts[cleanIp] = p;
+              saveAccountsToDisk();
             }
           }
         }
@@ -203,6 +259,11 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', () => {
+    // Save final position and state upon disconnect
+    if (players[playerId]) {
+      savedAccounts[cleanIp] = players[playerId];
+      saveAccountsToDisk();
+    }
     delete players[playerId];
     broadcast({ type: 'PLAYER_LEFT', id: playerId });
   });
@@ -261,7 +322,7 @@ setInterval(() => {
 
           if (p.xp >= p.combatLvl * 50) {
             p.combatLvl++;
-            p.statPoints += 3; // Award 3 stat points per level up
+            p.statPoints += 3;
             broadcast({ type: 'HITSPLAT', text: 'LEVEL UP!', x: Math.round(p.x), y: Math.round(p.y), color: '#ffff00' });
           }
 
@@ -288,6 +349,11 @@ setInterval(() => {
               });
             });
             broadcast({ type: 'GROUND_UPDATE', groundItems });
+          }
+          // Save progress updates to disk on combat action
+          if (p.ip && savedAccounts[p.ip]) {
+            savedAccounts[p.ip] = p;
+            saveAccountsToDisk();
           }
         } else {
           p.targetX = Math.round(npc.x);
