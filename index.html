@@ -56,19 +56,24 @@
     cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.5);
   }
 
-  /* UI Windows */
+  /* Movable UI Windows */
   .ui-window {
-    position: absolute; bottom: 76px; right: 20px;
+    position: absolute;
     width: 290px; max-height: 380px;
     background: rgba(22, 18, 13, 0.95); border: 3px solid #6b5233; border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: none; flex-direction: column; z-index: 25;
     overflow: hidden; backdrop-filter: blur(4px);
+    touch-action: none;
   }
   .ui-window.active { display: flex; }
+  
+  #inventory-win { bottom: 76px; right: 20px; }
+  #shop-win { bottom: 76px; right: 320px; }
+
   .ui-header {
     background: linear-gradient(90deg, #3d2d1b, #1e150b); padding: 8px 12px;
     border-bottom: 2px solid #5a4227; display: flex; justify-content: space-between; align-items: center;
-    font-weight: bold; color: #f8db83; font-size: 13px;
+    font-weight: bold; color: #f8db83; font-size: 13px; cursor: move;
   }
   .ui-close { cursor: pointer; color: #a88a5a; font-size: 16px; }
   .ui-body { padding: 10px; overflow-y: auto; max-height: 320px; }
@@ -134,7 +139,7 @@
   </div>
 
   <div class="ui-window" id="inventory-win">
-    <div class="ui-header">
+    <div class="ui-header" id="inventory-win-header">
       <span>Inventory (28)</span>
       <span class="ui-close" onclick="toggleWindow('inventory-win')">✕</span>
     </div>
@@ -144,7 +149,7 @@
   </div>
 
   <div class="ui-window" id="shop-win">
-    <div class="ui-header">
+    <div class="ui-header" id="shop-win-header">
       <span>Bob's General Store</span>
       <span class="ui-close" onclick="toggleWindow('shop-win')">✕</span>
     </div>
@@ -260,6 +265,75 @@ function goFullscreen() {
 function toggleWindow(id) {
   document.getElementById(id).classList.toggle('active');
 }
+
+// DRAGGABLE WINDOW SYSTEM
+function makeDraggable(elmnt, header) {
+  let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+  
+  header.onmousedown = dragMouseDown;
+  header.ontouchstart = dragTouchStart;
+
+  function dragMouseDown(e) {
+    e.preventDefault();
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    document.onmouseup = closeDragElement;
+    document.onmousemove = elementDrag;
+    bringToFront(elmnt);
+  }
+
+  function elementDrag(e) {
+    e.preventDefault();
+    pos1 = pos3 - e.clientX;
+    pos2 = pos4 - e.clientY;
+    pos3 = e.clientX;
+    pos4 = e.clientY;
+    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+    elmnt.style.bottom = 'auto';
+    elmnt.style.right = 'auto';
+  }
+
+  function closeDragElement() {
+    document.onmouseup = null;
+    document.onmousemove = null;
+  }
+
+  function dragTouchStart(e) {
+    const touch = e.touches[0];
+    pos3 = touch.clientX;
+    pos4 = touch.clientY;
+    document.ontouchend = closeTouchDragElement;
+    document.ontouchmove = elementTouchDrag;
+    bringToFront(elmnt);
+  }
+
+  function elementTouchDrag(e) {
+    const touch = e.touches[0];
+    pos1 = pos3 - touch.clientX;
+    pos2 = pos4 - touch.clientY;
+    pos3 = touch.clientX;
+    pos4 = touch.clientY;
+    elmnt.style.top = (elmnt.offsetTop - pos2) + "px";
+    elmnt.style.left = (elmnt.offsetLeft - pos1) + "px";
+    elmnt.style.bottom = 'auto';
+    elmnt.style.right = 'auto';
+  }
+
+  function closeTouchDragElement() {
+    document.ontouchend = null;
+    document.ontouchmove = null;
+  }
+}
+
+let topZIndex = 25;
+function bringToFront(elmnt) {
+  topZIndex++;
+  elmnt.style.zIndex = topZIndex;
+}
+
+makeDraggable(document.getElementById("inventory-win"), document.getElementById("inventory-win-header"));
+makeDraggable(document.getElementById("shop-win"), document.getElementById("shop-win-header"));
 
 function renderInventory() {
   if (!state.playerId || !state.players[state.playerId]) return;
