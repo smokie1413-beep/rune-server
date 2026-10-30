@@ -5,14 +5,12 @@ const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
-// Create an HTTP server that serves index.html to web browsers
 const server = http.createServer((req, res) => {
-  let filePath = path.join(__dirname, 'index.html');
-  
+  const filePath = path.join(__dirname, 'index.html');
   fs.readFile(filePath, (err, content) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
-      res.end('RuneQuest 2D: index.html not found on server!');
+      res.end('Error: index.html not found in server folder.');
     } else {
       res.writeHead(200, { 'Content-Type': 'text/html' });
       res.end(content, 'utf-8');
@@ -21,7 +19,8 @@ const server = http.createServer((req, res) => {
 });
 
 const wss = new WebSocketServer({ server });
-console.log(`[RuneServer] Running on port ${PORT}`);
+
+console.log(`[RuneServer] Starting on port ${PORT}`);
 
 const players = {};
 const npcs = [
@@ -37,6 +36,7 @@ function broadcast(data) {
 }
 
 wss.on('connection', (ws) => {
+  console.log('[RuneServer] New client connected!');
   const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
   
   players[playerId] = {
@@ -72,7 +72,6 @@ wss.on('connection', (ws) => {
   });
 });
 
-// 20-Tick Network Loop
 setInterval(() => {
   const moveSpeed = 0.15;
   Object.values(players).forEach((p) => {
@@ -86,4 +85,6 @@ setInterval(() => {
   broadcast({ type: 'TICK_UPDATE', players, npcs });
 }, 50);
 
-server.listen(PORT);
+server.listen(PORT, () => {
+  console.log(`[RuneServer] Successfully listening on port ${PORT}`);
+});
