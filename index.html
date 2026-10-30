@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>RuneQuest 2D - Inventory & Sprites</title>
+<title>RuneQuest 2D - Fullscreen Shop</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0b0b0d; color: #fff; }
   #game-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #151d18; }
   canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 
+  /* Top Bar Header */
   #top-bar {
     position: absolute; top: 8px; left: 8px; right: 8px;
     display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10;
@@ -19,6 +20,14 @@
     border: 2px solid #5d462b; border-radius: 6px; padding: 6px 12px;
     display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.6);
   }
+
+  .btn-hud {
+    pointer-events: auto; background: linear-gradient(180deg, #4a3821, #241a0e);
+    border: 2px solid #8c6a3c; border-radius: 6px; color: #f3d078; padding: 6px 12px;
+    font-size: 11px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.5);
+    display: flex; align-items: center; gap: 4px;
+  }
+  .btn-hud:active { transform: scale(0.95); border-color: #ffd700; }
 
   /* HUD Side Controls */
   #hud-tabs {
@@ -37,7 +46,7 @@
   /* UI Windows */
   .ui-window {
     position: absolute; bottom: 64px; right: 12px;
-    width: 280px; max-height: 380px;
+    width: 300px; max-height: 400px;
     background: rgba(22, 18, 13, 0.95); border: 3px solid #6b5233; border-radius: 10px;
     box-shadow: 0 8px 24px rgba(0,0,0,0.8); display: none; flex-direction: column; z-index: 25;
     overflow: hidden; backdrop-filter: blur(4px);
@@ -49,7 +58,7 @@
     font-weight: bold; color: #f8db83; font-size: 13px;
   }
   .ui-close { cursor: pointer; color: #a88a5a; font-size: 16px; }
-  .ui-body { padding: 10px; overflow-y: auto; max-height: 320px; }
+  .ui-body { padding: 10px; overflow-y: auto; max-height: 340px; }
 
   .grid-28 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .inv-slot {
@@ -65,12 +74,13 @@
   /* Shop Items List */
   .shop-item-row {
     display: flex; justify-content: space-between; align-items: center;
-    background: #18130d; border: 1px solid #4a3821; padding: 6px 8px; border-radius: 6px; margin-bottom: 6px;
+    background: #18130d; border: 1px solid #4a3821; padding: 6px 10px; border-radius: 6px; margin-bottom: 6px;
   }
   .shop-btn {
-    background: #4a3720; border: 1px solid #f0c868; color: #fff;
-    padding: 4px 8px; border-radius: 4px; font-size: 10px; cursor: pointer;
+    background: linear-gradient(180deg, #4a3720, #22180c); border: 1px solid #f0c868; color: #fff;
+    padding: 4px 10px; border-radius: 4px; font-size: 11px; font-weight: bold; cursor: pointer;
   }
+  .shop-btn:active { transform: scale(0.95); }
 
   /* Chat Box */
   #chat-container {
@@ -97,8 +107,11 @@
         <span id="player-stats-hud" style="color: #00ffcc; font-size: 10px;">Lvl: 3 | HP: 20/20</span>
       </div>
     </div>
-    <div class="hud-badge">
-      <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-hud" onclick="toggleFullscreen()">📺 FULLSCREEN</button>
+      <div class="hud-badge">
+        <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
+      </div>
     </div>
   </div>
 
@@ -117,34 +130,21 @@
     </div>
   </div>
 
-  <!-- Shop Modal -->
+  <!-- Shopkeeper General Store Modal -->
   <div class="ui-window" id="shop-win">
     <div class="ui-header">
-      <span>General Store</span>
+      <span>Bob's General Store</span>
       <span class="ui-close" onclick="toggleWindow('shop-win')">✕</span>
     </div>
     <div class="ui-body">
-      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap inventory items to SELL, or buy below:</div>
-      <div id="shop-items-list">
-        <div class="shop-item-row">
-          <span>🍞 Bread (12g)</span>
-          <button class="shop-btn" onclick="buyItem('bread')">Buy</button>
-        </div>
-        <div class="shop-item-row">
-          <span>🗡️ Iron Sword (150g)</span>
-          <button class="shop-btn" onclick="buyItem('iron_sword')">Buy</button>
-        </div>
-        <div class="shop-item-row">
-          <span>🪖 Bronze Helm (80g)</span>
-          <button class="shop-btn" onclick="buyItem('bronze_helm')">Buy</button>
-        </div>
-      </div>
+      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap items in inventory to SELL, or buy:</div>
+      <div id="shop-items-list"></div>
     </div>
   </div>
 
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Click Goblins to fight or Shopkeeper to trade!</div>
+      <div class="msg system">Click Shopkeeper Bob to open the Store!</div>
     </div>
     <input type="text" id="chat-input" placeholder="Type message..." />
   </div>
@@ -159,6 +159,7 @@ const state = {
   players: {},
   npcs: [],
   groundItems: [],
+  shopStock: [],
   map: [],
   popups: []
 };
@@ -191,7 +192,9 @@ socket.onmessage = (event) => {
       state.players = data.players || {};
       state.npcs = data.npcs || [];
       state.groundItems = data.groundItems || [];
+      state.shopStock = data.shopStock || [];
       renderInventory();
+      renderShop();
     } else if (data.type === 'TICK_UPDATE') {
       state.players = data.players || {};
       state.npcs = data.npcs || [];
@@ -229,6 +232,17 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(()=>{});
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(()=>{});
+    }
+  } else {
+    document.exitFullscreen();
+  }
+}
+
 function toggleWindow(id) {
   const win = document.getElementById(id);
   win.classList.toggle('active');
@@ -248,6 +262,20 @@ function renderInventory() {
       el.onclick = () => onInventorySlotClick(index, item);
     }
     grid.appendChild(el);
+  });
+}
+
+function renderShop() {
+  const shopContainer = document.getElementById('shop-items-list');
+  shopContainer.innerHTML = '';
+  state.shopStock.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'shop-item-row';
+    row.innerHTML = `
+      <span>${item.icon} ${item.name} (${item.buyPrice}g)</span>
+      <button class="shop-btn" onclick="buyItem('${item.id}')">Buy</button>
+    `;
+    shopContainer.appendChild(row);
   });
 }
 
@@ -275,14 +303,14 @@ canvas.addEventListener('click', (e) => {
   const worldX = (clickX + cameraX) / TILE_PX;
   const worldY = (clickY + cameraY) / TILE_PX;
 
-  // 1. Check Ground Item Pickup Click
+  // 1. Ground Item Pickup
   const clickedGround = state.groundItems.find(g => Math.hypot(g.x - worldX, g.y - worldY) < 0.8);
   if (clickedGround) {
     socket.send(JSON.stringify({ type: 'PICKUP', itemId: clickedGround.id }));
     return;
   }
 
-  // 2. Check NPC Click (Monsters or Shopkeepers)
+  // 2. NPC Selection (Shopkeeper or Monsters)
   const clickedNpc = state.npcs.find(n => n.alive && Math.hypot(n.x - worldX, n.y - worldY) < 1.0);
   if (clickedNpc) {
     if (clickedNpc.type === 'shopkeeper') {
@@ -295,7 +323,7 @@ canvas.addEventListener('click', (e) => {
     return;
   }
 
-  // 3. Move Player
+  // 3. Movement
   const tileX = Math.floor(worldX);
   const tileY = Math.floor(worldY);
   socket.send(JSON.stringify({ type: 'MOVE', x: tileX, y: tileY }));
@@ -321,27 +349,24 @@ function spawnPopup(text, tileX, tileY, color) {
   state.popups.push({ text, x: tileX, y: tileY, color, alpha: 1.0, offsetY: 0 });
 }
 
-// Procedural Sprite Drawing Functions
+// Procedural Sprite Rendering
 function drawPlayerSprite(x, y, isMe, isAttacking) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
 
-  // Body armor plate
   ctx.fillStyle = isMe ? '#3b82f6' : '#ef4444';
   ctx.fillRect(-8, -4, 16, 16);
 
-  // Steel Helmet
   ctx.fillStyle = '#94a3b8';
   ctx.fillRect(-6, -14, 12, 10);
   ctx.fillStyle = '#0f172a';
-  ctx.fillRect(-4, -10, 8, 2); // Visor
+  ctx.fillRect(-4, -10, 8, 2);
 
-  // Sword animation
   ctx.fillStyle = '#cbd5e1';
   if (isAttacking) {
-    ctx.fillRect(8, -12, 14, 4); // Swing/Thrust
+    ctx.fillRect(8, -12, 14, 4);
   } else {
-    ctx.fillRect(8, -8, 4, 14); // Rest
+    ctx.fillRect(8, -8, 4, 14);
   }
 
   ctx.restore();
@@ -351,36 +376,30 @@ function drawGoblinSprite(x, y) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
 
-  // Goblin green skin
   ctx.fillStyle = '#15803d';
   ctx.fillRect(-7, -4, 14, 14);
 
-  // Head and pointy ears
   ctx.fillRect(-6, -13, 12, 9);
-  ctx.fillRect(-10, -11, 4, 4); // Left ear
-  ctx.fillRect(6, -11, 4, 4);  // Right ear
+  ctx.fillRect(-10, -11, 4, 4);
+  ctx.fillRect(6, -11, 4, 4);
 
-  // Red glowing eyes
   ctx.fillStyle = '#ff0000';
   ctx.fillRect(-4, -10, 2, 2);
   ctx.fillRect(2, -10, 2, 2);
 
-  // Loincloth
   ctx.fillStyle = '#78350f';
   ctx.fillRect(-6, 6, 12, 6);
 
   ctx.restore();
 }
 
-function drawShopkeeperSprite(x, y, name) {
+function drawShopkeeperSprite(x, y) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
 
-  // Wizard Robes
   ctx.fillStyle = '#7c3aed';
   ctx.fillRect(-8, -4, 16, 18);
 
-  // Wizard Hat
   ctx.fillStyle = '#6d28d9';
   ctx.beginPath();
   ctx.moveTo(0, -18);
@@ -405,7 +424,7 @@ function draw() {
     camY = me.y * TILE_PX - canvas.height / 2;
   }
 
-  // Terrain
+  // Map
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const sx = x * TILE_PX - camX;
@@ -428,7 +447,7 @@ function draw() {
     ctx.fillText(item.icon, sx + 8, sy + 22);
   });
 
-  // NPCs (Goblins & Shopkeeper)
+  // NPCs
   state.npcs.forEach(npc => {
     if (!npc.alive) return;
     const sx = npc.x * TILE_PX - camX;
@@ -465,7 +484,7 @@ function draw() {
     ctx.fillText(`${p.name}`, sx - 6, sy - 16);
   });
 
-  // Floating Damage / Gold Splats
+  // Damage / Gold Floating Splats
   state.popups.forEach((pop, idx) => {
     const sx = pop.x * TILE_PX - camX + 8;
     const sy = pop.y * TILE_PX - camY - pop.offsetY;
