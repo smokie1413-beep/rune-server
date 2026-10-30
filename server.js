@@ -1,11 +1,23 @@
 const { WebSocketServer } = require('ws');
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
+// Create an HTTP server that serves index.html to web browsers
 const server = http.createServer((req, res) => {
-  res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('RuneQuest 2D Server Running!');
+  let filePath = path.join(__dirname, 'index.html');
+  
+  fs.readFile(filePath, (err, content) => {
+    if (err) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('RuneQuest 2D: index.html not found on server!');
+    } else {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(content, 'utf-8');
+    }
+  });
 });
 
 const wss = new WebSocketServer({ server });
