@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>RuneQuest 2D - Inventory & Shop</title>
+<title>RuneQuest 2D - Inventory & Sprites</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0b0b0d; color: #fff; }
@@ -124,7 +124,7 @@
       <span class="ui-close" onclick="toggleWindow('shop-win')">✕</span>
     </div>
     <div class="ui-body">
-      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap items in your inventory to SELL, or buy below:</div>
+      <div style="font-size: 11px; color: #f0c868; margin-bottom: 8px;">Tap inventory items to SELL, or buy below:</div>
       <div id="shop-items-list">
         <div class="shop-item-row">
           <span>🍞 Bread (12g)</span>
@@ -144,7 +144,7 @@
 
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Click Shopkeeper Bob to trade!</div>
+      <div class="msg system">Click Goblins to fight or Shopkeeper to trade!</div>
     </div>
     <input type="text" id="chat-input" placeholder="Type message..." />
   </div>
@@ -321,6 +321,77 @@ function spawnPopup(text, tileX, tileY, color) {
   state.popups.push({ text, x: tileX, y: tileY, color, alpha: 1.0, offsetY: 0 });
 }
 
+// Procedural Sprite Drawing Functions
+function drawPlayerSprite(x, y, isMe, isAttacking) {
+  ctx.save();
+  ctx.translate(x + 16, y + 16);
+
+  // Body armor plate
+  ctx.fillStyle = isMe ? '#3b82f6' : '#ef4444';
+  ctx.fillRect(-8, -4, 16, 16);
+
+  // Steel Helmet
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillRect(-6, -14, 12, 10);
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(-4, -10, 8, 2); // Visor
+
+  // Sword animation
+  ctx.fillStyle = '#cbd5e1';
+  if (isAttacking) {
+    ctx.fillRect(8, -12, 14, 4); // Swing/Thrust
+  } else {
+    ctx.fillRect(8, -8, 4, 14); // Rest
+  }
+
+  ctx.restore();
+}
+
+function drawGoblinSprite(x, y) {
+  ctx.save();
+  ctx.translate(x + 16, y + 16);
+
+  // Goblin green skin
+  ctx.fillStyle = '#15803d';
+  ctx.fillRect(-7, -4, 14, 14);
+
+  // Head and pointy ears
+  ctx.fillRect(-6, -13, 12, 9);
+  ctx.fillRect(-10, -11, 4, 4); // Left ear
+  ctx.fillRect(6, -11, 4, 4);  // Right ear
+
+  // Red glowing eyes
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(-4, -10, 2, 2);
+  ctx.fillRect(2, -10, 2, 2);
+
+  // Loincloth
+  ctx.fillStyle = '#78350f';
+  ctx.fillRect(-6, 6, 12, 6);
+
+  ctx.restore();
+}
+
+function drawShopkeeperSprite(x, y, name) {
+  ctx.save();
+  ctx.translate(x + 16, y + 16);
+
+  // Wizard Robes
+  ctx.fillStyle = '#7c3aed';
+  ctx.fillRect(-8, -4, 16, 18);
+
+  // Wizard Hat
+  ctx.fillStyle = '#6d28d9';
+  ctx.beginPath();
+  ctx.moveTo(0, -18);
+  ctx.lineTo(-8, -6);
+  ctx.lineTo(8, -6);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.restore();
+}
+
 // Render Loop
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -357,25 +428,27 @@ function draw() {
     ctx.fillText(item.icon, sx + 8, sy + 22);
   });
 
-  // NPCs
+  // NPCs (Goblins & Shopkeeper)
   state.npcs.forEach(npc => {
     if (!npc.alive) return;
     const sx = npc.x * TILE_PX - camX;
     const sy = npc.y * TILE_PX - camY;
 
     if (npc.type === 'shopkeeper') {
-      ctx.font = '24px serif';
-      ctx.fillText('🧙‍♂️', sx + 4, sy + 24);
+      drawShopkeeperSprite(sx, sy);
       ctx.font = 'bold 9px sans-serif';
       ctx.fillStyle = '#f0c868';
-      ctx.fillText(npc.name, sx - 8, sy - 6);
+      ctx.fillText(npc.name, sx - 12, sy - 8);
     } else {
-      ctx.font = '22px serif';
-      ctx.fillText('👺', sx + 4, sy + 24);
+      drawGoblinSprite(sx, sy);
       ctx.fillStyle = '#000';
       ctx.fillRect(sx + 2, sy - 6, 28, 4);
       ctx.fillStyle = '#22c55e';
       ctx.fillRect(sx + 2, sy - 6, (npc.hp / npc.maxHp) * 28, 4);
+
+      ctx.font = 'bold 9px sans-serif';
+      ctx.fillStyle = '#f87171';
+      ctx.fillText(`${npc.name} (Lvl ${npc.level})`, sx - 6, sy - 10);
     }
   });
 
@@ -385,14 +458,14 @@ function draw() {
     const sy = p.y * TILE_PX - camY;
     const isMe = p.id === state.playerId;
 
-    ctx.font = '24px serif';
-    ctx.fillText(isMe ? '⚔️' : '🛡️', sx + 4, sy + 24);
+    drawPlayerSprite(sx, sy, isMe, p.isAttacking);
+
     ctx.font = 'bold 10px sans-serif';
     ctx.fillStyle = isMe ? '#facc15' : '#38bdf8';
-    ctx.fillText(`${p.name}`, sx - 6, sy - 8);
+    ctx.fillText(`${p.name}`, sx - 6, sy - 16);
   });
 
-  // Damage/Gold Splats
+  // Floating Damage / Gold Splats
   state.popups.forEach((pop, idx) => {
     const sx = pop.x * TILE_PX - camX + 8;
     const sy = pop.y * TILE_PX - camY - pop.offsetY;
