@@ -1,234 +1,35 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<!-- PWA & Mobile Web App Capabilities -->
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0b0b0d">
-<title>RuneQuest 2D Client</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RuneQuest 2D</title>
 <style>
-  * { 
-    box-sizing: border-box; 
-    margin: 0; 
-    padding: 0; 
-    user-select: none; 
-    -webkit-user-select: none; 
-    font-family: 'Cinzel', 'Trebuchet MS', sans-serif; 
-  }
-  body, html { 
-    width: 100%; 
-    height: 100%; 
-    overflow: hidden; 
-    background-color: #0b0b0d; 
-    color: #fff; 
-  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background-color: #111; color: #fff; }
+  #game-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #151d18; }
+  canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 
-  #game-container {
-    position: relative;
-    width: 100vw;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-    background: #000;
-  }
-
-  canvas {
-    width: 100%;
-    height: 100%;
-    display: block;
-    image-rendering: pixelated;
-    background: #151d18;
-  }
-
-  /* Top Bar Header */
   #top-bar {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    right: 8px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    pointer-events: none;
-    z-index: 10;
+    position: absolute; top: 8px; left: 8px; right: 8px;
+    display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 10;
   }
-
   .hud-badge {
-    pointer-events: auto;
-    background: rgba(18, 16, 12, 0.85);
-    border: 2px solid #5d462b;
-    border-radius: 6px;
-    padding: 6px 12px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.6);
-    backdrop-filter: blur(4px);
+    pointer-events: auto; background: rgba(18, 16, 12, 0.9);
+    border: 2px solid #5d462b; border-radius: 6px; padding: 6px 12px;
+    display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.6);
   }
 
-  .fullscreen-btn {
-    pointer-events: auto;
-    background: linear-gradient(180deg, #4a3821 0%, #241b10 100%);
-    border: 2px solid #a6814c;
-    border-radius: 6px;
-    color: #fce3a4;
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: bold;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    box-shadow: 0 4px 8px rgba(0,0,0,0.6);
-    transition: transform 0.1s, border-color 0.2s;
-  }
-
-  .fullscreen-btn:active {
-    transform: scale(0.95);
-    border-color: #ffd700;
-  }
-
-  /* Side HUD Tabs for Mobile Landscape */
-  #hud-tabs {
-    position: absolute;
-    bottom: 12px;
-    right: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 20;
-  }
-
-  .tab-btn {
-    width: 48px;
-    height: 48px;
-    background: linear-gradient(180deg, #3a2e1e 0%, #1a140d 100%);
-    border: 2px solid #8c6a3c;
-    border-radius: 8px;
-    color: #f3d078;
-    font-size: 20px;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    cursor: pointer;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.5);
-  }
-
-  .tab-btn:active, .tab-btn.active {
-    transform: scale(0.95);
-    border-color: #ffd700;
-  }
-
-  /* UI Windows */
-  .ui-window {
-    position: absolute;
-    bottom: 68px;
-    right: 12px;
-    width: 310px;
-    max-height: 420px;
-    background: rgba(22, 18, 13, 0.94);
-    border: 3px solid #6b5233;
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.8);
-    display: none;
-    flex-direction: column;
-    z-index: 25;
-    backdrop-filter: blur(6px);
-    overflow: hidden;
-  }
-
-  .ui-window.active { display: flex; }
-
-  .ui-header {
-    background: linear-gradient(90deg, #3d2d1b, #1e150b);
-    padding: 8px 12px;
-    border-bottom: 2px solid #5a4227;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: bold;
-    color: #f8db83;
-    font-size: 14px;
-  }
-
-  .ui-close { cursor: pointer; color: #a88a5a; font-size: 16px; }
-  .ui-close:hover { color: #fff; }
-
-  .ui-body { padding: 12px; overflow-y: auto; max-height: 360px; }
-
-  .grid-28 {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-  }
-
-  .inv-slot {
-    width: 100%;
-    aspect-ratio: 1;
-    background: #120e0a;
-    border: 2px solid #3d2f1d;
-    border-radius: 6px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    position: relative;
-    cursor: pointer;
-  }
-
-  .inv-slot .item-icon { font-size: 24px; }
-  .inv-slot .item-count { position: absolute; top: 2px; left: 4px; font-size: 10px; font-weight: bold; color: #ffff00; }
-
-  /* Chat Box */
   #chat-container {
-    position: absolute;
-    bottom: 12px;
-    left: 12px;
-    width: 300px;
-    height: 130px;
-    background: rgba(10, 8, 6, 0.85);
-    border: 2px solid #4a3720;
-    border-radius: 8px;
-    display: flex;
-    flex-direction: column;
-    z-index: 15;
-    backdrop-filter: blur(4px);
-    overflow: hidden;
+    position: absolute; bottom: 12px; left: 12px; width: 300px; height: 120px;
+    background: rgba(10, 8, 6, 0.85); border: 2px solid #4a3720; border-radius: 8px;
+    display: flex; flex-direction: column; z-index: 15; overflow: hidden;
   }
-
-  #chat-messages {
-    flex: 1;
-    padding: 8px;
-    overflow-y: auto;
-    font-size: 11px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
+  #chat-messages { flex: 1; padding: 6px; overflow-y: auto; font-size: 11px; display: flex; flex-direction: column; gap: 4px; }
   .msg { color: #d0c0a0; }
   .msg.system { color: #ffff00; }
-  .msg.combat { color: #ff5555; }
-
-  #chat-input-row {
-    display: flex;
-    border-top: 1px solid #382816;
-    background: #140e08;
-  }
-
-  #chat-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    padding: 6px 8px;
-    color: #fff;
-    font-size: 11px;
-    outline: none;
-  }
+  .msg.error { color: #ff4444; }
+  #chat-input { background: transparent; border: none; border-top: 1px solid #382816; padding: 6px; color: #fff; font-size: 11px; outline: none; }
 </style>
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
 </head>
@@ -237,115 +38,25 @@
 <div id="game-container">
   <canvas id="gameCanvas"></canvas>
 
-  <!-- Top Status & Fullscreen HUD -->
   <div id="top-bar">
     <div class="hud-badge">
-      <span style="font-size: 16px;">⚔️</span>
-      <div style="display: flex; flex-direction: column;">
-        <span style="font-size: 12px; font-weight: bold; color: #f0c868;" id="player-name-hud">Connecting...</span>
-        <span style="font-size: 10px; color: #ff5555;" id="player-hp-hud">HP: 10/10</span>
-      </div>
+      <span>⚔️</span>
+      <span id="player-name-hud" style="color: #f0c868; font-size: 12px; font-weight: bold;">Connecting...</span>
     </div>
-    
-    <div style="display: flex; gap: 8px; align-items: center;">
-      <div class="hud-badge">
-        <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
-      </div>
-      <button class="fullscreen-btn" id="fs-toggle-btn" onclick="toggleFullScreen()">
-        <span id="fs-icon">⛶</span> <span id="fs-label">Fullscreen</span>
-      </button>
+    <div class="hud-badge">
+      <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
     </div>
   </div>
 
-  <!-- Chat Overlay -->
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Initializing Web App client...</div>
+      <div class="msg system">Attempting WebSocket handshake...</div>
     </div>
-    <div id="chat-input-row">
-      <input type="text" id="chat-input" placeholder="Type message and press Enter..." />
-    </div>
-  </div>
-
-  <!-- Landscape Navigation Tabs -->
-  <div id="hud-tabs">
-    <button class="tab-btn" onclick="toggleWindow('inventory-win')">🎒</button>
-  </div>
-
-  <!-- Inventory UI Window -->
-  <div class="ui-window" id="inventory-win">
-    <div class="ui-header">
-      <span>Inventory (28)</span>
-      <span class="ui-close" onclick="toggleWindow('inventory-win')">✕</span>
-    </div>
-    <div class="ui-body">
-      <div class="grid-28" id="inventory-grid"></div>
-    </div>
+    <input type="text" id="chat-input" placeholder="Type chat message..." />
   </div>
 </div>
 
 <script>
-/**
- * Fullscreen API & Mobile Landscape Orientation Toggle
- */
-function toggleFullScreen() {
-  const elem = document.documentElement;
-  const fsBtnLabel = document.getElementById('fs-label');
-  const fsBtnIcon = document.getElementById('fs-icon');
-
-  if (!document.fullscreenElement && !document.mozFullScreenElement && !document.webkitFullscreenElement && !document.msFullscreenElement) {
-    if (elem.requestFullscreen) {
-      elem.requestFullscreen();
-    } else if (elem.msRequestFullscreen) {
-      elem.msRequestFullscreen();
-    } else if (elem.mozRequestFullScreen) {
-      elem.mozRequestFullScreen();
-    } else if (elem.webkitRequestFullscreen) {
-      elem.webkitRequestFullscreen(Element.ALLOW_KEYBOARD_INPUT);
-    }
-    
-    // Request Landscape Lock on supported mobile devices
-    if (screen.orientation && screen.orientation.lock) {
-      screen.orientation.lock('landscape').catch(() => {});
-    }
-
-    if (fsBtnLabel) fsBtnLabel.innerText = "Exit";
-    if (fsBtnIcon) fsBtnIcon.innerText = "🗗";
-  } else {
-    if (document.exitFullscreen) {
-      document.exitFullscreen();
-    } else if (document.msExitFullscreen) {
-      document.msExitFullscreen();
-    } else if (document.mozCancelFullScreen) {
-      document.mozCancelFullScreen();
-    } else if (document.webkitExitFullscreen) {
-      document.webkitExitFullscreen();
-    }
-    
-    if (fsBtnLabel) fsBtnLabel.innerText = "Fullscreen";
-    if (fsBtnIcon) fsBtnIcon.innerText = "⛶";
-  }
-}
-
-document.addEventListener('fullscreenchange', handleFSChange);
-document.addEventListener('webkitfullscreenchange', handleFSChange);
-document.addEventListener('mozfullscreenchange', handleFSChange);
-
-function handleFSChange() {
-  const fsBtnLabel = document.getElementById('fs-label');
-  const fsBtnIcon = document.getElementById('fs-icon');
-  if (document.fullscreenElement || document.webkitFullscreenElement) {
-    if (fsBtnLabel) fsBtnLabel.innerText = "Exit";
-    if (fsBtnIcon) fsBtnIcon.innerText = "🗗";
-  } else {
-    if (fsBtnLabel) fsBtnLabel.innerText = "Fullscreen";
-    if (fsBtnIcon) fsBtnIcon.innerText = "⛶";
-  }
-}
-
-/**
- * Game Client Logic & Networking
- */
 const TILE_PX = 32;
 const MAP_SIZE = 50;
 
@@ -354,13 +65,9 @@ const state = {
   players: {},
   npcs: [],
   map: [],
-  popups: [],
-  inventory: Array(28).fill(null)
+  popups: []
 };
 
-state.inventory[0] = { name: 'Coins', icon: '🪙', count: 100 };
-
-// Create 50x50 map data
 for (let y = 0; y < MAP_SIZE; y++) {
   const row = [];
   for (let x = 0; x < MAP_SIZE; x++) {
@@ -372,15 +79,18 @@ for (let y = 0; y < MAP_SIZE; y++) {
   state.map.push(row);
 }
 
-// Auto-detect secure wss:// or standard ws://
+// Connect securely on Render (wss://) or locally (ws://)
 const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 const host = window.location.host || 'localhost:8080';
-const socket = new WebSocket(protocol + host);
+const socketUrl = protocol + host;
+
+addChat(`Connecting to: ${socketUrl}`, 'system');
+const socket = new WebSocket(socketUrl);
 
 socket.onopen = () => {
-  document.getElementById('connection-status').innerText = '● Connected (20 TPS)';
+  document.getElementById('connection-status').innerText = '● Connected';
   document.getElementById('connection-status').style.color = '#00ff88';
-  addChat('Connected to server!', 'system');
+  addChat('Handshake successful! Connected to server.', 'system');
 };
 
 socket.onmessage = (event) => {
@@ -396,24 +106,22 @@ socket.onmessage = (event) => {
     } else if (data.type === 'TICK_UPDATE') {
       state.players = data.players || {};
       state.npcs = data.npcs || [];
-      if (state.playerId && state.players[state.playerId]) {
-        const me = state.players[state.playerId];
-        document.getElementById('player-hp-hud').innerText = `HP: ${me.hp}/${me.maxHp}`;
-      }
     } else if (data.type === 'CHAT_MSG') {
       addChat(`${data.sender}: ${data.text}`);
-    } else if (data.type === 'HITSPLAT') {
-      spawnPopup(data.text, data.x, data.y, data.color);
     }
-  } catch (err) {
-    console.error('Network JSON error:', err);
-  }
+  } catch (err) {}
 };
 
-socket.onclose = () => {
-  document.getElementById('connection-status').innerText = '● Disconnected';
+socket.onerror = (error) => {
+  document.getElementById('connection-status').innerText = '● Error';
   document.getElementById('connection-status').style.color = '#ff4444';
-  addChat('Lost connection to server.', 'system');
+  addChat('WebSocket error encountered. Check network/proxy.', 'error');
+};
+
+socket.onclose = (event) => {
+  document.getElementById('connection-status').innerText = '● Closed';
+  document.getElementById('connection-status').style.color = '#ff4444';
+  addChat(`Connection closed (Code: ${event.code})`, 'error');
 };
 
 const canvas = document.getElementById('gameCanvas');
@@ -426,7 +134,6 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-// Handle touch and tap tile movement
 canvas.addEventListener('click', (e) => {
   if (!state.playerId || !state.players[state.playerId]) return;
   const rect = canvas.getBoundingClientRect();
@@ -459,29 +166,6 @@ function addChat(text, type = '') {
   box.scrollTop = box.scrollHeight;
 }
 
-function spawnPopup(text, tileX, tileY, color) {
-  state.popups.push({ text, x: tileX, y: tileY, color, alpha: 1.0, offsetY: 0 });
-}
-
-function toggleWindow(id) {
-  const win = document.getElementById(id);
-  win.classList.toggle('active');
-  renderInventory();
-}
-
-function renderInventory() {
-  const grid = document.getElementById('inventory-grid');
-  grid.innerHTML = '';
-  state.inventory.forEach(item => {
-    const el = document.createElement('div');
-    el.className = 'inv-slot';
-    if (item) {
-      el.innerHTML = `<span class="item-icon">${item.icon}</span><span class="item-count">${item.count}</span>`;
-    }
-    grid.appendChild(el);
-  });
-}
-
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -494,7 +178,14 @@ function draw() {
     camY = me.y * TILE_PX - canvas.height / 2;
   }
 
-  // Draw Map
+  for (let y = 0; y < MAP_SIZE; y++) {
+    for (let x = 0; x < MAP_SIZE; x++) {
+      const sx = x * TILE_PX - camX;
+      const sy = y * TILE_PX - canvas.height / 2; // handled by standard camY below
+    }
+  }
+
+  // Proper map tile render pass
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const sx = x * TILE_PX - camX;
@@ -505,13 +196,39 @@ function draw() {
       const t = state.map[y][x];
       ctx.fillStyle = t === 1 ? '#7a6343' : (t === 2 ? '#1c4966' : '#2d4c1e');
       ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
-      ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
       ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
     }
   }
 
-  // Draw NPCs
   if (Array.isArray(state.npcs)) {
     state.npcs.forEach(npc => {
-      if (!npc
-```
+      if (!npc.alive) return;
+      const sx = npc.x * TILE_PX - camX;
+      const sy = npc.y * TILE_PX - camY;
+      ctx.font = '22px serif';
+      ctx.fillText('👺', sx + 4, sy + 24);
+    });
+  }
+
+  if (state.players) {
+    Object.values(state.players).forEach(p => {
+      const sx = p.x * TILE_PX - camX;
+      const sy = p.y * TILE_PX - camY;
+
+      ctx.font = '24px serif';
+      ctx.fillText(p.id === state.playerId ? '⚔️' : '🧙‍♂️', sx + 4, sy + 24);
+
+      ctx.font = '10px sans-serif';
+      ctx.fillStyle = p.id === state.playerId ? '#ffff00' : '#00ffcc';
+      ctx.fillText(p.name || 'Hero', sx, sy - 6);
+    });
+  }
+
+  requestAnimationFrame(draw);
+}
+
+requestAnimationFrame(draw);
+</script>
+</body>
+</html>
