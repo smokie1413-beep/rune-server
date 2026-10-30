@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>RuneQuest 2D - Fullscreen Shop</title>
+<title>RuneQuest 2D - Shop Building</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
   body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0b0b0d; color: #fff; }
@@ -29,7 +29,6 @@
   }
   .btn-hud:active { transform: scale(0.95); border-color: #ffd700; }
 
-  /* HUD Side Controls */
   #hud-tabs {
     position: absolute; bottom: 12px; right: 12px;
     display: flex; flex-direction: column; gap: 8px; z-index: 20;
@@ -71,7 +70,6 @@
   .inv-slot .item-icon { font-size: 22px; }
   .inv-slot .item-count { position: absolute; top: 2px; left: 4px; font-size: 10px; font-weight: bold; color: #ffff00; }
 
-  /* Shop Items List */
   .shop-item-row {
     display: flex; justify-content: space-between; align-items: center;
     background: #18130d; border: 1px solid #4a3821; padding: 6px 10px; border-radius: 6px; margin-bottom: 6px;
@@ -82,7 +80,6 @@
   }
   .shop-btn:active { transform: scale(0.95); }
 
-  /* Chat Box */
   #chat-container {
     position: absolute; bottom: 12px; left: 12px; width: 260px; height: 110px;
     background: rgba(10, 8, 6, 0.85); border: 2px solid #4a3720; border-radius: 8px;
@@ -119,7 +116,6 @@
     <button class="tab-btn" onclick="toggleWindow('inventory-win')">🎒</button>
   </div>
 
-  <!-- Inventory Modal -->
   <div class="ui-window" id="inventory-win">
     <div class="ui-header">
       <span>Inventory (28)</span>
@@ -130,7 +126,6 @@
     </div>
   </div>
 
-  <!-- Shopkeeper General Store Modal -->
   <div class="ui-window" id="shop-win">
     <div class="ui-header">
       <span>Bob's General Store</span>
@@ -144,7 +139,7 @@
 
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Click Shopkeeper Bob to open the Store!</div>
+      <div class="msg system">Enter the building and speak to Bob!</div>
     </div>
     <input type="text" id="chat-input" placeholder="Type message..." />
   </div>
@@ -164,12 +159,22 @@ const state = {
   popups: []
 };
 
+// Generate Map Tiles
+// 0 = Grass, 1 = Dirt Road, 2 = Water, 3 = Wooden Shop Floor, 4 = Stone Wall
 for (let y = 0; y < MAP_SIZE; y++) {
   const row = [];
   for (let x = 0; x < MAP_SIZE; x++) {
     let tile = 0;
     if (x === 22 || y === 22) tile = 1;
-    if (x > 32 && x < 42 && y > 10 && y < 20) tile = 2;
+    if (x > 32 && x < 42 && y > 10 && y < 20) {
+      if (x >= 32 && x <= 40 && y >= 12 && y <= 18) {
+        if (x === 32 || x === 40 || y === 12 || y === 18) {
+          tile = (x === 36 && y === 18) ? 3 : 4; // 3 = Wooden Doorway, 4 = Wall
+        } else {
+          tile = 3; // Interior Floor
+        }
+      }
+    }
     row.push(tile);
   }
   state.map.push(row);
@@ -303,14 +308,12 @@ canvas.addEventListener('click', (e) => {
   const worldX = (clickX + cameraX) / TILE_PX;
   const worldY = (clickY + cameraY) / TILE_PX;
 
-  // 1. Ground Item Pickup
   const clickedGround = state.groundItems.find(g => Math.hypot(g.x - worldX, g.y - worldY) < 0.8);
   if (clickedGround) {
     socket.send(JSON.stringify({ type: 'PICKUP', itemId: clickedGround.id }));
     return;
   }
 
-  // 2. NPC Selection (Shopkeeper or Monsters)
   const clickedNpc = state.npcs.find(n => n.alive && Math.hypot(n.x - worldX, n.y - worldY) < 1.0);
   if (clickedNpc) {
     if (clickedNpc.type === 'shopkeeper') {
@@ -323,7 +326,6 @@ canvas.addEventListener('click', (e) => {
     return;
   }
 
-  // 3. Movement
   const tileX = Math.floor(worldX);
   const tileY = Math.floor(worldY);
   socket.send(JSON.stringify({ type: 'MOVE', x: tileX, y: tileY }));
@@ -349,57 +351,46 @@ function spawnPopup(text, tileX, tileY, color) {
   state.popups.push({ text, x: tileX, y: tileY, color, alpha: 1.0, offsetY: 0 });
 }
 
-// Procedural Sprite Rendering
+// Sprite Rendering Functions
 function drawPlayerSprite(x, y, isMe, isAttacking) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
-
   ctx.fillStyle = isMe ? '#3b82f6' : '#ef4444';
   ctx.fillRect(-8, -4, 16, 16);
-
   ctx.fillStyle = '#94a3b8';
   ctx.fillRect(-6, -14, 12, 10);
   ctx.fillStyle = '#0f172a';
   ctx.fillRect(-4, -10, 8, 2);
-
   ctx.fillStyle = '#cbd5e1';
   if (isAttacking) {
     ctx.fillRect(8, -12, 14, 4);
   } else {
     ctx.fillRect(8, -8, 4, 14);
   }
-
   ctx.restore();
 }
 
 function drawGoblinSprite(x, y) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
-
   ctx.fillStyle = '#15803d';
   ctx.fillRect(-7, -4, 14, 14);
-
   ctx.fillRect(-6, -13, 12, 9);
   ctx.fillRect(-10, -11, 4, 4);
   ctx.fillRect(6, -11, 4, 4);
-
   ctx.fillStyle = '#ff0000';
   ctx.fillRect(-4, -10, 2, 2);
   ctx.fillRect(2, -10, 2, 2);
-
   ctx.fillStyle = '#78350f';
   ctx.fillRect(-6, 6, 12, 6);
-
   ctx.restore();
 }
 
 function drawShopkeeperSprite(x, y) {
   ctx.save();
   ctx.translate(x + 16, y + 16);
-
   ctx.fillStyle = '#7c3aed';
   ctx.fillRect(-8, -4, 16, 18);
-
   ctx.fillStyle = '#6d28d9';
   ctx.beginPath();
   ctx.moveTo(0, -18);
@@ -407,7 +398,6 @@ function drawShopkeeperSprite(x, y) {
   ctx.lineTo(8, -6);
   ctx.closePath();
   ctx.fill();
-
   ctx.restore();
 }
 
@@ -424,7 +414,7 @@ function draw() {
     camY = me.y * TILE_PX - canvas.height / 2;
   }
 
-  // Map
+  // Render Map Tiles
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const sx = x * TILE_PX - camX;
@@ -432,11 +422,43 @@ function draw() {
       if (sx < -TILE_PX || sx > canvas.width || sy < -TILE_PX || sy > canvas.height) continue;
 
       const t = state.map[y][x];
-      ctx.fillStyle = t === 1 ? '#57422a' : (t === 2 ? '#1e3a8a' : '#14532d');
-      ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
-      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-      ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
+      if (t === 4) {
+        // Stone Wall
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
+        ctx.strokeStyle = '#1e293b';
+        ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
+      } else if (t === 3) {
+        // Wooden Floor
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
+        ctx.strokeStyle = '#451a03';
+        ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
+      } else if (t === 1) {
+        // Dirt Road
+        ctx.fillStyle = '#57422a';
+        ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
+      } else {
+        // Grass
+        ctx.fillStyle = '#14532d';
+        ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
+        ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+        ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
+      }
     }
+  }
+
+  // Shop Building Sign Overhead (at x: 36, y: 11)
+  const signX = 36 * TILE_PX - camX - 20;
+  const signY = 11 * TILE_PX - camY;
+  if (signX > -100 && signX < canvas.width + 100 && signY > -50 && signY < canvas.height + 50) {
+    ctx.fillStyle = '#3a2e1e';
+    ctx.fillRect(signX, signY, 72, 20);
+    ctx.strokeStyle = '#8c6a3c';
+    ctx.strokeRect(signX, signY, 72, 20);
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillStyle = '#f3d078';
+    ctx.fillText("BOB'S SHOP", signX + 6, signY + 13);
   }
 
   // Ground Items
@@ -484,7 +506,7 @@ function draw() {
     ctx.fillText(`${p.name}`, sx - 6, sy - 16);
   });
 
-  // Damage / Gold Floating Splats
+  // Damage / Gold Splats
   state.popups.forEach((pop, idx) => {
     const sx = pop.x * TILE_PX - camX + 8;
     const sy = pop.y * TILE_PX - camY - pop.offsetY;
