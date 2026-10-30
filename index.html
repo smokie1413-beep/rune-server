@@ -6,7 +6,7 @@
 <title>RuneQuest 2D</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; font-family: 'Cinzel', 'Trebuchet MS', sans-serif; }
-  body, html { width: 100%; height: 100%; overflow: hidden; background-color: #111; color: #fff; }
+  body, html { width: 100%; height: 100%; overflow: hidden; background-color: #0b0b0d; color: #fff; }
   #game-container { position: relative; width: 100vw; height: 100vh; display: flex; flex-direction: column; background: #151d18; }
   canvas { width: 100%; height: 100%; display: block; image-rendering: pixelated; }
 
@@ -17,11 +17,18 @@
   .hud-badge {
     pointer-events: auto; background: rgba(18, 16, 12, 0.9);
     border: 2px solid #5d462b; border-radius: 6px; padding: 6px 12px;
-    display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.6);
+    display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.6);
   }
 
+  .btn-hud {
+    pointer-events: auto; background: linear-gradient(180deg, #4a3821, #241a0e);
+    border: 2px solid #8c6a3c; border-radius: 6px; color: #f3d078; padding: 6px 10px;
+    font-size: 11px; font-weight: bold; cursor: pointer;
+  }
+  .btn-hud:active { transform: scale(0.95); }
+
   #chat-container {
-    position: absolute; bottom: 12px; left: 12px; width: 300px; height: 120px;
+    position: absolute; bottom: 12px; left: 12px; width: 280px; height: 110px;
     background: rgba(10, 8, 6, 0.85); border: 2px solid #4a3720; border-radius: 8px;
     display: flex; flex-direction: column; z-index: 15; overflow: hidden;
   }
@@ -40,19 +47,24 @@
 
   <div id="top-bar">
     <div class="hud-badge">
-      <span>⚔️</span>
-      <span id="player-name-hud" style="color: #f0c868; font-size: 12px; font-weight: bold;">Connecting...</span>
+      <div style="display: flex; flex-direction: column;">
+        <span id="player-name-hud" style="color: #f0c868; font-size: 12px; font-weight: bold;">Connecting...</span>
+        <span id="player-stats-hud" style="color: #00ffcc; font-size: 10px;">Lvl: 3 | HP: 20/20</span>
+      </div>
     </div>
-    <div class="hud-badge">
-      <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn-hud" onclick="toggleFullscreen()">fullscreen</button>
+      <div class="hud-badge">
+        <span id="connection-status" style="font-size: 11px; color: #ffaa00;">● Connecting...</span>
+      </div>
     </div>
   </div>
 
   <div id="chat-container">
     <div id="chat-messages">
-      <div class="msg system">Attempting WebSocket handshake...</div>
+      <div class="msg system">Click Goblins to attack!</div>
     </div>
-    <input type="text" id="chat-input" placeholder="Type chat message..." />
+    <input type="text" id="chat-input" placeholder="Type message..." />
   </div>
 </div>
 
@@ -79,18 +91,14 @@ for (let y = 0; y < MAP_SIZE; y++) {
   state.map.push(row);
 }
 
-// Connect securely on Render (wss://) or locally (ws://)
 const protocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
 const host = window.location.host || 'localhost:8080';
-const socketUrl = protocol + host;
-
-addChat(`Connecting to: ${socketUrl}`, 'system');
-const socket = new WebSocket(socketUrl);
+const socket = new WebSocket(protocol + host);
 
 socket.onopen = () => {
   document.getElementById('connection-status').innerText = '● Connected';
   document.getElementById('connection-status').style.color = '#00ff88';
-  addChat('Handshake successful! Connected to server.', 'system');
+  addChat('Connected to 20-tick server!', 'system');
 };
 
 socket.onmessage = (event) => {
@@ -100,28 +108,25 @@ socket.onmessage = (event) => {
       state.playerId = data.id;
       state.players = data.players || {};
       state.npcs = data.npcs || [];
-      if (state.players[state.playerId]) {
-        document.getElementById('player-name-hud').innerText = state.players[state.playerId].name;
-      }
     } else if (data.type === 'TICK_UPDATE') {
       state.players = data.players || {};
       state.npcs = data.npcs || [];
+      if (state.playerId && state.players[state.playerId]) {
+        const me = state.players[state.playerId];
+        document.getElementById('player-name-hud').innerText = me.name;
+        document.getElementById('player-stats-hud').innerText = `Lvl: ${me.combatLvl} | HP: ${me.hp}/${me.maxHp} | XP: ${me.xp}`;
+      }
+    } else if (data.type === 'HITSPLAT') {
+      spawnPopup(data.text, data.x, data.y, data.color);
     } else if (data.type === 'CHAT_MSG') {
       addChat(`${data.sender}: ${data.text}`);
     }
   } catch (err) {}
 };
 
-socket.onerror = (error) => {
-  document.getElementById('connection-status').innerText = '● Error';
-  document.getElementById('connection-status').style.color = '#ff4444';
-  addChat('WebSocket error encountered. Check network/proxy.', 'error');
-};
-
-socket.onclose = (event) => {
+socket.onclose = () => {
   document.getElementById('connection-status').innerText = '● Closed';
   document.getElementById('connection-status').style.color = '#ff4444';
-  addChat(`Connection closed (Code: ${event.code})`, 'error');
 };
 
 const canvas = document.getElementById('gameCanvas');
@@ -134,6 +139,15 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(()=>{});
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(()=>{});
+  } else {
+    document.exitFullscreen();
+  }
+}
+
 canvas.addEventListener('click', (e) => {
   if (!state.playerId || !state.players[state.playerId]) return;
   const rect = canvas.getBoundingClientRect();
@@ -144,10 +158,20 @@ canvas.addEventListener('click', (e) => {
   const cameraX = me.x * TILE_PX - canvas.width / 2;
   const cameraY = me.y * TILE_PX - canvas.height / 2;
 
-  const tileX = Math.floor((clickX + cameraX) / TILE_PX);
-  const tileY = Math.floor((clickY + cameraY) / TILE_PX);
+  const worldX = (clickX + cameraX) / TILE_PX;
+  const worldY = (clickY + cameraY) / TILE_PX;
 
-  socket.send(JSON.stringify({ type: 'MOVE', x: tileX, y: tileY }));
+  // Check if player tapped an NPC
+  const clickedNpc = state.npcs.find(n => n.alive && Math.hypot(n.x - worldX, n.y - worldY) < 1.0);
+
+  if (clickedNpc) {
+    socket.send(JSON.stringify({ type: 'ATTACK', targetId: clickedNpc.id }));
+    addChat(`Attacking ${clickedNpc.name}...`, 'system');
+  } else {
+    const tileX = Math.floor(worldX);
+    const tileY = Math.floor(worldY);
+    socket.send(JSON.stringify({ type: 'MOVE', x: tileX, y: tileY }));
+  }
 });
 
 document.getElementById('chat-input').addEventListener('keypress', (e) => {
@@ -166,6 +190,62 @@ function addChat(text, type = '') {
   box.scrollTop = box.scrollHeight;
 }
 
+function spawnPopup(text, tileX, tileY, color) {
+  state.popups.push({ text, x: tileX, y: tileY, color, alpha: 1.0, offsetY: 0 });
+}
+
+// Procedural Character Drawing Functions
+function drawPlayerSprite(x, y, isMe, isAttacking) {
+  ctx.save();
+  ctx.translate(x + 16, y + 16);
+
+  // Body / Platebody
+  ctx.fillStyle = isMe ? '#3b82f6' : '#ef4444';
+  ctx.fillRect(-8, -4, 16, 16);
+
+  // Steel Helmet
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillRect(-6, -14, 12, 10);
+  ctx.fillStyle = '#0f172a';
+  ctx.fillRect(-4, -10, 8, 2); // Visor slot
+
+  // Sword Animation
+  ctx.fillStyle = '#cbd5e1';
+  if (isAttacking) {
+    ctx.fillRect(8, -12, 14, 4); // Thrust forward
+  } else {
+    ctx.fillRect(8, -8, 4, 14); // Rest position
+  }
+
+  ctx.restore();
+}
+
+function drawGoblinSprite(x, y) {
+  ctx.save();
+  ctx.translate(x + 16, y + 16);
+
+  // Goblin Green Body
+  ctx.fillStyle = '#15803d';
+  ctx.fillRect(-7, -4, 14, 14);
+
+  // Head & Big Ears
+  ctx.fillRect(-6, -13, 12, 9);
+  ctx.fillRect(-10, -11, 4, 4); // Left Ear
+  ctx.fillRect(6, -11, 4, 4);  // Right Ear
+
+  // Glowing Red Eyes
+  ctx.fillStyle = '#ff0000';
+  ctx.fillRect(-4, -10, 2, 2);
+  ctx.fillRect(2, -10, 2, 2);
+
+  // Loincloth
+  ctx.fillStyle = '#78350f';
+  ctx.fillRect(-6, 6, 12, 6);
+
+  ctx.restore();
+}
+
+// Main Render Loop
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -178,52 +258,68 @@ function draw() {
     camY = me.y * TILE_PX - canvas.height / 2;
   }
 
-  for (let y = 0; y < MAP_SIZE; y++) {
-    for (let x = 0; x < MAP_SIZE; x++) {
-      const sx = x * TILE_PX - camX;
-      const sy = y * TILE_PX - canvas.height / 2; // handled by standard camY below
-    }
-  }
-
-  // Proper map tile render pass
+  // Draw Map
   for (let y = 0; y < MAP_SIZE; y++) {
     for (let x = 0; x < MAP_SIZE; x++) {
       const sx = x * TILE_PX - camX;
       const sy = y * TILE_PX - camY;
-
       if (sx < -TILE_PX || sx > canvas.width || sy < -TILE_PX || sy > canvas.height) continue;
 
       const t = state.map[y][x];
-      ctx.fillStyle = t === 1 ? '#7a6343' : (t === 2 ? '#1c4966' : '#2d4c1e');
+      ctx.fillStyle = t === 1 ? '#57422a' : (t === 2 ? '#1e3a8a' : '#14532d');
       ctx.fillRect(sx, sy, TILE_PX, TILE_PX);
-      ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.1)';
       ctx.strokeRect(sx, sy, TILE_PX, TILE_PX);
     }
   }
 
-  if (Array.isArray(state.npcs)) {
-    state.npcs.forEach(npc => {
-      if (!npc.alive) return;
-      const sx = npc.x * TILE_PX - camX;
-      const sy = npc.y * TILE_PX - camY;
-      ctx.font = '22px serif';
-      ctx.fillText('👺', sx + 4, sy + 24);
-    });
-  }
+  // Draw NPCs
+  state.npcs.forEach(npc => {
+    if (!npc.alive) return;
+    const sx = npc.x * TILE_PX - camX;
+    const sy = npc.y * TILE_PX - camY;
 
-  if (state.players) {
-    Object.values(state.players).forEach(p => {
-      const sx = p.x * TILE_PX - camX;
-      const sy = p.y * TILE_PX - camY;
+    drawGoblinSprite(sx, sy);
 
-      ctx.font = '24px serif';
-      ctx.fillText(p.id === state.playerId ? '⚔️' : '🧙‍♂️', sx + 4, sy + 24);
+    // Health Bar
+    ctx.fillStyle = '#000';
+    ctx.fillRect(sx + 2, sy - 8, 28, 4);
+    ctx.fillStyle = '#22c55e';
+    ctx.fillRect(sx + 2, sy - 8, (npc.hp / npc.maxHp) * 28, 4);
 
-      ctx.font = '10px sans-serif';
-      ctx.fillStyle = p.id === state.playerId ? '#ffff00' : '#00ffcc';
-      ctx.fillText(p.name || 'Hero', sx, sy - 6);
-    });
-  }
+    // Nameplate
+    ctx.font = 'bold 9px sans-serif';
+    ctx.fillStyle = '#f87171';
+    ctx.fillText(`${npc.name} (Lvl ${npc.level})`, sx - 4, sy - 12);
+  });
+
+  // Draw Players
+  Object.values(state.players).forEach(p => {
+    const sx = p.x * TILE_PX - camX;
+    const sy = p.y * TILE_PX - camY;
+
+    const isMe = p.id === state.playerId;
+    drawPlayerSprite(sx, sy, isMe, p.isAttacking);
+
+    // Player Name
+    ctx.font = 'bold 10px sans-serif';
+    ctx.fillStyle = isMe ? '#facc15' : '#38bdf8';
+    ctx.fillText(`${p.name} (Lvl ${p.combatLvl})`, sx - 6, sy - 18);
+  });
+
+  // Floating Damage Splats
+  state.popups.forEach((pop, idx) => {
+    const sx = pop.x * TILE_PX - camX + 8;
+    const sy = pop.y * TILE_PX - camY - pop.offsetY;
+
+    ctx.font = '900 14px sans-serif';
+    ctx.fillStyle = pop.color;
+    ctx.fillText(pop.text, sx, sy);
+
+    pop.offsetY += 0.5;
+    pop.alpha -= 0.025;
+    if (pop.alpha <= 0) state.popups.splice(idx, 1);
+  });
 
   requestAnimationFrame(draw);
 }
