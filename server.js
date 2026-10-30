@@ -6,7 +6,6 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SAVE_FILE = path.join(__dirname, 'players.json');
 
-// Load saved players database from disk if it exists
 let savedAccounts = {};
 if (fs.existsSync(SAVE_FILE)) {
   try {
@@ -49,7 +48,8 @@ const ITEM_DB = {
   iron_sword: { id: 'iron_sword', name: 'Iron Sword', icon: '🗡️', buyPrice: 150, sellPrice: 75, stackable: false, slot: 'weapon' },
   bronze_helm: { id: 'bronze_helm', name: 'Bronze Helm', icon: '🪖', buyPrice: 80, sellPrice: 40, stackable: false, slot: 'head' },
   wooden_shield: { id: 'wooden_shield', name: 'Wooden Shield', icon: '🛡️', buyPrice: 110, sellPrice: 55, stackable: false, slot: 'shield' },
-  fire_rune: { id: 'fire_rune', name: 'Fire Rune', icon: '🔥', buyPrice: 15, sellPrice: 7, stackable: true, slot: null }
+  fire_rune: { id: 'fire_rune', name: 'Fire Rune', icon: '🔥', buyPrice: 15, sellPrice: 7, stackable: true, slot: null },
+  rune_scimitar: { id: 'rune_scimitar', name: 'Rune Scimitar', icon: '✨', buyPrice: 1500, sellPrice: 750, stackable: false, slot: 'weapon' }
 };
 
 const SHOP_STOCK = [
@@ -57,16 +57,23 @@ const SHOP_STOCK = [
   ITEM_DB.iron_sword,
   ITEM_DB.bronze_helm,
   ITEM_DB.wooden_shield,
-  ITEM_DB.fire_rune
+  ITEM_DB.fire_rune,
+  ITEM_DB.rune_scimitar
 ];
 
 const players = {};
 let groundItems = [];
 
+// Expanded NPCs list including Level 10 Enemies in the North Wilderness Zone (y: 50 to 90)
 const npcs = [
   { id: 1, name: 'Goblin', x: 18, y: 28, targetX: 18, targetY: 28, hp: 12, maxHp: 12, level: 2, alive: true, respawnTicks: 0, type: 'monster' },
   { id: 2, name: 'Goblin Guard', x: 26, y: 30, targetX: 26, targetY: 30, hp: 20, maxHp: 20, level: 5, alive: true, respawnTicks: 0, type: 'monster' },
-  { id: 3, name: 'Shopkeeper Bob', x: 36, y: 15, targetX: 36, targetY: 15, hp: 100, maxHp: 100, level: 15, alive: true, respawnTicks: 0, type: 'shopkeeper' }
+  { id: 3, name: 'Shopkeeper Bob', x: 36, y: 15, targetX: 36, targetY: 15, hp: 100, maxHp: 100, level: 15, alive: true, respawnTicks: 0, type: 'shopkeeper' },
+  
+  // Level 10 Wilderness Enemies (North Connecting Map)
+  { id: 4, name: 'Hobgoblin Brute', x: 25, y: 70, targetX: 25, targetY: 70, hp: 45, maxHp: 45, level: 10, alive: true, respawnTicks: 0, type: 'monster' },
+  { id: 5, name: 'Moss Giant', x: 35, y: 75, targetX: 35, targetY: 75, hp: 60, maxHp: 60, level: 12, alive: true, respawnTicks: 0, type: 'monster' },
+  { id: 6, name: 'Dark Warrior', x: 15, y: 80, targetX: 15, targetY: 80, hp: 50, maxHp: 50, level: 10, alive: true, respawnTicks: 0, type: 'monster' }
 ];
 
 function broadcast(data) {
@@ -91,12 +98,14 @@ function addItemToInventory(player, itemId, count = 1) {
   return false;
 }
 
+// Collision Map: Town shop building walls + wilderness boundaries
 function isWallTile(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
+  // Shop Building
   if (tx >= 32 && tx <= 40 && ty >= 12 && ty <= 18) {
     if (tx === 32 || tx === 40 || ty === 12 || ty === 18) {
-      if (tx === 36 && ty === 18) return false;
+      if (tx === 36 && ty === 18) return false; // Doorway
       return true;
     }
   }
@@ -104,23 +113,17 @@ function isWallTile(x, y) {
 }
 
 wss.on('connection', (ws, req) => {
-  // Extract client IP address (handles Render proxy headers or local requests)
   const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown_ip';
   const cleanIp = clientIp.split(',')[0].trim();
-  console.log(`[RuneServer] Connection from IP: ${cleanIp}`);
-
   const playerId = 'player_' + Math.random().toString(36).substring(2, 9);
 
-  // Check if saved account exists for this IP
   let playerData;
   if (savedAccounts[cleanIp]) {
     playerData = savedAccounts[cleanIp];
-    playerData.id = playerId; // Assign new live socket ID
+    playerData.id = playerId;
     playerData.targetX = Math.round(playerData.x);
     playerData.targetY = Math.round(playerData.y);
-    console.log(`[RuneServer] Restored saved character for IP ${cleanIp}: ${playerData.name}`);
   } else {
-    // Brand new player profile
     const initialInv = Array(28).fill(null);
     initialInv[0] = { ...ITEM_DB.coins, count: 100 };
     initialInv[1] = { ...ITEM_DB.bread, count: 2 };
@@ -259,7 +262,6 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    // Save final position and state upon disconnect
     if (players[playerId]) {
       savedAccounts[cleanIp] = players[playerId];
       saveAccountsToDisk();
@@ -297,8 +299,8 @@ setInterval(() => {
       if (npc.y < npc.targetY) npc.y = Math.min(npc.targetY, npc.y + moveSpeed);
       else if (npc.y > npc.targetY) npc.y = Math.max(npc.targetY, npc.y - moveSpeed);
     } else if (Math.random() < 0.02) {
-      const rx = Math.max(10, Math.min(30, npc.x + (Math.floor(Math.random() * 5) - 2)));
-      const ry = Math.max(10, Math.min(40, npc.y + (Math.floor(Math.random() * 5) - 2)));
+      const rx = Math.max(5, Math.min(45, npc.x + (Math.floor(Math.random() * 5) - 2)));
+      const ry = Math.max(5, Math.min(85, npc.y + (Math.floor(Math.random() * 5) - 2)));
       if (!isWallTile(rx, ry)) {
         npc.targetX = rx;
         npc.targetY = ry;
@@ -330,12 +332,13 @@ setInterval(() => {
 
           if (npc.hp <= 0) {
             npc.alive = false;
-            npc.respawnTicks = 12;
+            npc.respawnTicks = 15;
             p.action = null;
 
             const drops = ['bones'];
             if (Math.random() < 0.7) drops.push('coins');
-            if (Math.random() < 0.3) drops.push('goblin_hide');
+            if (npc.level >= 10 && Math.random() < 0.15) drops.push('rune_scimitar');
+            else if (Math.random() < 0.3) drops.push('goblin_hide');
 
             drops.forEach(dropId => {
               groundItems.push({
@@ -343,14 +346,14 @@ setInterval(() => {
                 itemId: dropId,
                 name: ITEM_DB[dropId].name,
                 icon: ITEM_DB[dropId].icon,
-                count: dropId === 'coins' ? 15 : 1,
+                count: dropId === 'coins' ? 50 : 1,
                 x: Math.round(npc.x),
                 y: Math.round(npc.y)
               });
             });
             broadcast({ type: 'GROUND_UPDATE', groundItems });
           }
-          // Save progress updates to disk on combat action
+
           if (p.ip && savedAccounts[p.ip]) {
             savedAccounts[p.ip] = p;
             saveAccountsToDisk();
