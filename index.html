@@ -1758,6 +1758,83 @@ canvas.addEventListener('click', event => {
 });
 
 // Deterministic terrain.
+// Classic improved Perlin noise (Ken Perlin). The permutation is shuffled
+// from a fixed seed so every client and the server agree on height.
+const HEIGHT_PERM = (() => {
+  const src = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) src[i] = i;
+  let s = 0x51a7e311;
+  for (let i = 255; i > 0; i--) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    const j = s % (i + 1);
+    const tmp = src[i];
+    src[i] = src[j];
+    src[j] = tmp;
+  }
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) perm[i] = src[i & 255];
+  return perm;
+})();
+
+function fadePerlin(t) {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function lerpPerlin(a, b, t) {
+  return a + t * (b - a);
+}
+
+function gradPerlin(hash, x, y) {
+  switch (hash & 3) {
+    case 0: return x + y;
+    case 1: return -x + y;
+    case 2: return x - y;
+    default: return -x - y;
+  }
+}
+
+function perlin2(x, y) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = fadePerlin(xf);
+  const v = fadePerlin(yf);
+  const X = xi & 255;
+  const Y = yi & 255;
+  const aa = HEIGHT_PERM[HEIGHT_PERM[X] + Y];
+  const ab = HEIGHT_PERM[HEIGHT_PERM[X] + Y + 1];
+  const ba = HEIGHT_PERM[HEIGHT_PERM[X + 1] + Y];
+  const bb = HEIGHT_PERM[HEIGHT_PERM[X + 1] + Y + 1];
+  return lerpPerlin(
+    lerpPerlin(gradPerlin(aa, xf, yf), gradPerlin(ba, xf - 1, yf), u),
+    lerpPerlin(gradPerlin(ab, xf, yf - 1), gradPerlin(bb, xf - 1, yf - 1), u),
+    v
+  );
+}
+
+function fbmHeight(x, y) {
+  let sum = 0;
+  let amp = 1;
+  let freq = 1;
+  let norm = 0;
+  for (let octave = 0; octave < 5; octave++) {
+    sum += amp * perlin2(x * freq, y * freq);
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return sum / norm;
+}
+
+// 0 = basin, 1 = peak. Smooth across tiles; same value on the server.
+function terrainHeight(tx, ty) {
+  const n = fbmHeight((tx + 40) * 0.08, (ty + 40) * 0.08);
+  return Math.max(0, Math.min(1, n * 0.72 + 0.5));
+}
+
+const WATER_LEVEL = 0.38;
+
 function terrainHash(x, y, salt = 0) {
   let value =
     Math.imul(x, 374761393) ^
@@ -1904,17 +1981,64 @@ function createTerrainTile(x, y) {
     return image;
   }
 
-  const greens = north
-    ? ['#28342a', '#2d372b', '#293029', '#30372c']
-    : ['#16552e', '#185a30', '#17562e', '#1a5b31'];
+  const height = terrainHeight(x, y);
 
-  const patch = north
-    ? ['#242e26', '#323c2f']
-    : ['#14502b', '#1d6034'];
+  if (height < WATER_LEVEL) {
+    const deep = north ? '#16384a' : '#1a5270';
+    const mid = north ? '#1e4a60' : '#21739a';
+    const foam = north ? '#6a90a0' : '#8ec4d8';
+    r(0, 0, T, T, deep);
+    for (let i = 0; i < 6; i++) {
+      r(rnd(48), 6 + i * 10, 10 + rnd(16), 2, mid);
+      if (rnd(3) === 0) r(rnd(40), 8 + i * 10, 6 + rnd(8), 1, foam);
+    }
+    r(0, 0, T, 2, 'rgba(255,255,255,.15)');
+    return image;
+  }
 
-  const blades = north
-    ? ['#46533f', '#1d271f', '#56634a']
-    : ['#2b7639', '#0f4425', '#3d8a45'];
+  const shore = height < 0.46;
+  const hill = height >= 0.62 && height < 0.74;
+  const peak = height >= 0.74;
+
+  let greens;
+  let patch;
+  let blades;
+
+  if (peak) {
+    greens = ['#6e685c', '#787266', '#686258', '#807a6e'];
+    patch = ['#5c564c', '#8a8476'];
+    blades = ['#9a9486', '#6a6458', '#b0aa9c'];
+  } else if (hill) {
+    greens = north
+      ? ['#3c4236', '#464c3c', '#404638', '#4e5444']
+      : ['#3e5c34', '#48683c', '#406236', '#507040'];
+    patch = north
+      ? ['#343a2e', '#505640']
+      : ['#34542c', '#5a7a40'];
+    blades = north
+      ? ['#6a7460', '#2a3228', '#80886e']
+      : ['#5a8a48', '#2a5428', '#78a45c'];
+  } else if (shore) {
+    greens = north
+      ? ['#4e5644', '#585e4c', '#525a48', '#626852']
+      : ['#5c6842', '#66724a', '#58643e', '#6e7a50'];
+    patch = north
+      ? ['#5a6248', '#6a7258']
+      : ['#6a7048', '#7a8458'];
+    blades = north
+      ? ['#7a8468', '#3a4234', '#909878']
+      : ['#7a9450', '#4a6430', '#9ab068'];
+  } else {
+    greens = north
+      ? ['#28342a', '#2d372b', '#293029', '#30372c']
+      : ['#16552e', '#185a30', '#17562e', '#1a5b31'];
+    patch = north
+      ? ['#242e26', '#323c2f']
+      : ['#14502b', '#1d6034'];
+    blades = north
+      ? ['#46533f', '#1d271f', '#56634a']
+      : ['#2b7639', '#0f4425', '#3d8a45'];
+  }
 
   r(0, 0, T, T, greens[0]);
 
@@ -1998,7 +2122,7 @@ function createTerrainTile(x, y) {
       r(bx, 54 - h, 1, h, tuft[i % 3]);
       if (i % 2) r(bx + 1, 54 - h - 2, 1, 3, tuft[(i + 1) % 3]);
     }
-  } else if (!north && seed % 23 === 0) {
+  } else if (!north && !peak && !hill && seed % 23 === 0) {
     const petal = seed % 2 ? '#e3c158' : '#c897c8';
     for (let i = 0; i < 3; i++) {
       const fx = 18 + i * 11 + rnd(4);
@@ -2064,6 +2188,33 @@ function createTerrainTile(x, y) {
     r(18, 40, 28, 1, '#6e5038');
     r(22, 36, 20, 4, '#5b412b');
     r(24, 44, 16, 2, '#2e2118');
+  }
+
+  if (peak) {
+    for (let i = 0; i < 5; i++) {
+      const sx = 8 + rnd(40);
+      const sy = 10 + rnd(36);
+      r(sx, sy + 2, 8 + rnd(6), 3, '#4a463e');
+      r(sx, sy, 8 + rnd(6), 3, '#8a8478');
+      r(sx, sy, 3, 1, '#c2baaa');
+    }
+  }
+
+  const riseX = terrainHeight(x + 1, y) - height;
+  const riseY = terrainHeight(x, y + 1) - height;
+  if (riseY > 0.012) {
+    paint.fillStyle = 'rgba(0, 0, 0, .2)';
+    paint.fillRect(0, T - 5, T, 5);
+  } else if (riseY < -0.012) {
+    paint.fillStyle = 'rgba(255, 250, 220, .14)';
+    paint.fillRect(0, 0, T, 4);
+  }
+  if (riseX > 0.012) {
+    paint.fillStyle = 'rgba(0, 0, 0, .14)';
+    paint.fillRect(T - 4, 0, 4, T);
+  } else if (riseX < -0.012) {
+    paint.fillStyle = 'rgba(255, 250, 220, .1)';
+    paint.fillRect(0, 0, 4, T);
   }
 
   return image;
