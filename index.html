@@ -2923,6 +2923,70 @@ const SPRITE_ART = {
     p.px(35, 19, 2, 3, '#eee5bf');
   },
 
+  // Muscular orc with mohawk, double-bit axe, fur kilt — matches the town marauder art.
+  orc(p) {
+    const skin = '#7a9a68';
+    const darkSkin = '#5e7a50';
+    const fur = '#8b6239';
+    const furLight = '#c4a06a';
+    const leather = '#5a3a22';
+
+    // Legs + fur boots
+    p.part(skin, shapes(sRect(22, 44, 8, 12), sRect(34, 44, 8, 12)));
+    p.part(leather, shapes(sRect(20, 54, 11, 8), sRect(33, 54, 11, 8)));
+    p.part(furLight, shapes(sRect(20, 54, 11, 2), sRect(33, 54, 11, 2)));
+    p.px(22, 58, 2, 3, furLight);
+    p.px(40, 58, 2, 3, furLight);
+
+    // Double-headed axe over the shoulder
+    p.part('#6b4a28', sRect(40, 8, 18, 4));
+    p.part('#6b4a28', sRect(54, 6, 4, 8));
+    p.part('#a8b0b8', sPoly([
+      [8, 10], [18, 4], [22, 10], [18, 16], [8, 12]
+    ]), { light: .25 });
+    p.part('#8a929a', sPoly([
+      [10, 10], [18, 6], [20, 10], [18, 14]
+    ]), { light: .15 });
+    p.part('#c5ccd2', sPoly([
+      [56, 4], [62, 10], [56, 16], [52, 10]
+    ]), { light: .2 });
+    p.px(6, 10, 3, 2, '#d0d6dc');
+    p.px(60, 10, 3, 2, '#d0d6dc');
+
+    // Arms
+    p.part(skin, shapes(sRect(10, 24, 10, 18), sRect(44, 22, 10, 16)));
+    p.part(leather, shapes(sRect(9, 22, 12, 6), sRect(44, 20, 12, 6)));
+    p.part(furLight, shapes(sRect(9, 26, 12, 2), sRect(44, 24, 12, 2)));
+    p.part(skin, shapes(sRect(8, 40, 10, 6), sRect(48, 36, 8, 6)));
+
+    // Torso + strap + fur kilt
+    p.part(skin, sEllipse(32, 34, 14, 16));
+    p.part(leather, sPoly([[18, 18], [28, 22], [40, 42], [34, 46], [22, 40]]));
+    p.px(30, 28, 4, 3, '#c9a85a');
+    p.part(fur, sPoly([[16, 40], [48, 40], [46, 54], [18, 54]]));
+    p.part(furLight, sPoly([[18, 40], [46, 40], [44, 44], [20, 44]]));
+    p.part(leather, sRect(18, 40, 28, 4));
+    p.px(24, 40, 3, 4, '#c9a85a');
+    p.px(36, 40, 3, 4, '#c9a85a');
+
+    // Head, mohawk, tusks, eyes
+    p.part(skin, sEllipse(32, 16, 11, 11));
+    p.part('#1a1208', sPoly([[30, 2], [34, 2], [36, 14], [28, 14]]));
+    p.part('#0e0a06', sRect(31, 2, 2, 12));
+    p.px(24, 14, 5, 3, '#e6c84a');
+    p.px(35, 14, 5, 3, '#e6c84a');
+    p.px(26, 15, 2, 2, '#1a0c04');
+    p.px(37, 15, 2, 2, '#1a0c04');
+    p.part(darkSkin, sRect(26, 20, 12, 3));
+    p.px(25, 22, 2, 3, '#eee5bf');
+    p.px(37, 22, 2, 3, '#eee5bf');
+    p.px(28, 24, 8, 2, '#2a1a12');
+    // Tooth necklace
+    p.px(24, 26, 2, 3, '#ddd2b0');
+    p.px(30, 27, 2, 3, '#ddd2b0');
+    p.px(36, 26, 2, 3, '#ddd2b0');
+  },
+
   warrior(p) {
     const plate = '#4c5160';
 
@@ -3041,6 +3105,7 @@ const SPRITE_SIZES = {
   hero: [64, 64],
   goblin: [64, 64],
   brute: [64, 64],
+  orc: [64, 64],
   warrior: [64, 64],
   shopkeeper: [64, 64],
   giant: [96, 110]
@@ -3486,6 +3551,7 @@ function draw(now) {
 
       if (giant) sprite = 'giant';
       else if (entity.name.includes('Warrior')) sprite = 'warrior';
+      else if (entity.name.includes('Orc')) sprite = 'orc';
       else if (entity.level >= 10) sprite = 'brute';
 
       const top = drawSprite(x, y, sprite, giant);
@@ -3494,12 +3560,12 @@ function draw(now) {
         text: `${entity.name} (Lvl ${entity.level})`,
         x: cx,
         y: top - 14,
-        color: entity.level >= 10 ? '#efac9d' : '#d5b78c',
+        color: entity.level >= 8 ? '#efac9d' : '#d5b78c',
         barX: x,
         barY: top - 9,
         hp: entity.hp,
         maxHp: entity.maxHp,
-        barColor: entity.level >= 10 ? '#c75a4b' : '#6baf63'
+        barColor: entity.level >= 8 ? '#c75a4b' : '#6baf63'
       });
     }
   });
