@@ -23,6 +23,15 @@ const ENEMY_MELEE_RANGE = 1.5;
 const RESPAWN_PROTECTION_MS = 3000;
 const EAT_COOLDOWN_MS = 1800;
 
+// Server tick rate: how many times per second the world updates
+// and sends positions to players.
+const TICK_RATE = 100;
+const TICK_MS = 1000 / TICK_RATE;
+
+// Speeds are per second, so changing TICK_RATE keeps gameplay the same.
+const MOVE_SPEED_TILES_PER_SEC = 3;
+const NPC_WANDER_CHANCE_PER_SEC = 0.4;
+
 let savedAccounts = {};
 
 if (fs.existsSync(SAVE_FILE)) {
@@ -730,7 +739,7 @@ function moveEntity(entity, speed) {
 
 // Movement and world updates.
 setInterval(() => {
-  const speed = 0.15;
+  const speed = MOVE_SPEED_TILES_PER_SEC / TICK_RATE;
 
   Object.values(players).forEach(player => {
     moveEntity(player, speed);
@@ -747,7 +756,7 @@ setInterval(() => {
       return;
     }
 
-    if (Math.random() >= 0.02) return;
+    if (Math.random() >= NPC_WANDER_CHANCE_PER_SEC / TICK_RATE) return;
 
     const wilderness = npc.region === 'wilderness';
 
@@ -788,7 +797,7 @@ setInterval(() => {
   });
 
   broadcastWorld();
-}, 50);
+}, TICK_MS);
 
 // Player attacks and monster respawning.
 setInterval(() => {
@@ -999,4 +1008,5 @@ setInterval(() => {
 server.listen(PORT, () => {
   console.log(`[RuneServer] Listening on port ${PORT}`);
   console.log('[RuneServer] Northern wilderness: Y -45 through -1.');
+  console.log(`[RuneServer] Tick rate: ${TICK_RATE} ticks/sec.`);
 });
