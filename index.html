@@ -88,6 +88,35 @@ canvas {
   background: #4aa35c;
 }
 
+#xp-track {
+  position: relative;
+  width: 170px;
+  height: 12px;
+  margin-top: 4px;
+  background: #1b1726;
+  border: 1px solid #4a3d63;
+  overflow: hidden;
+}
+
+#xp-fill {
+  width: 0%;
+  height: 100%;
+  background: linear-gradient(#b48cf0, #6a42b8);
+  transition: width .25s ease-out;
+}
+
+#xp-text {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f1e9ff;
+  font: bold 8px/1 'Trebuchet MS', sans-serif;
+  text-shadow: 0 1px 2px #000;
+  white-space: nowrap;
+}
+
 #right-hud {
   display: flex;
   align-items: center;
@@ -112,7 +141,7 @@ canvas {
 
 #area-badge {
   position: absolute;
-  top: 85px;
+  top: 100px;
   left: 8px;
   padding: 6px 9px;
   background: rgba(18, 25, 19, .9);
@@ -512,6 +541,10 @@ canvas {
       <div id="player-name-hud">Connecting...</div>
       <div id="player-stats-hud">Lvl: 3 | HP: 20/20</div>
       <div id="health-track"><div id="health-fill"></div></div>
+      <div id="xp-track" title="Experience to next level">
+        <div id="xp-fill"></div>
+        <div id="xp-text">XP</div>
+      </div>
     </div>
 
     <div id="right-hud">
@@ -1174,7 +1207,22 @@ function renderUI(force = false) {
 
   document.getElementById('player-name-hud').textContent = me.name;
   document.getElementById('player-stats-hud').textContent =
-    `Lvl: ${me.combatLvl} | HP: ${me.hp}/${me.maxHp} | XP: ${me.xp}`;
+    `Lvl: ${me.combatLvl} | HP: ${me.hp}/${me.maxHp}`;
+
+  // Matches the server: you level up when XP reaches level × 50.
+  // XP is a running total, so the bar starts at the last threshold.
+  const level = me.combatLvl;
+  const xpStart = level <= 3 ? 0 : (level - 1) * 50;
+  const xpEnd = level * 50;
+  const xpFraction = Math.max(
+    0,
+    Math.min(1, (me.xp - xpStart) / (xpEnd - xpStart))
+  );
+
+  document.getElementById('xp-fill').style.width =
+    xpFraction * 100 + '%';
+  document.getElementById('xp-text').textContent =
+    `${Math.floor(xpFraction * 100)}% to Lvl ${level + 1}`;
 
   const healthFraction = me.maxHp > 0
     ? Math.max(0, Math.min(1, me.hp / me.maxHp))
