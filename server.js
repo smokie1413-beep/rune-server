@@ -215,6 +215,12 @@ const npcs = [
     36, 15, 100, 15,
     'shopkeeper', 'town'
   ),
+  // Orc just north of Bob's shop (outside the north wall).
+  makeNpc(
+    7, 'Orc Marauder',
+    36, 9, 35, 8,
+    'monster', 'town'
+  ),
 
   // These enemies now spawn NORTH of town.
   makeNpc(
