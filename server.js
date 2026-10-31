@@ -472,6 +472,97 @@ function eatItem(ws, p, index) {
   broadcastWorld();
 }
 
+// Same Perlin height field as the client (seed 0x51a7e311). Deep water is solid.
+const HEIGHT_PERM = (() => {
+  const src = new Uint8Array(256);
+  for (let i = 0; i < 256; i++) src[i] = i;
+  let s = 0x51a7e311;
+  for (let i = 255; i > 0; i--) {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    const j = s % (i + 1);
+    const tmp = src[i];
+    src[i] = src[j];
+    src[j] = tmp;
+  }
+  const perm = new Uint8Array(512);
+  for (let i = 0; i < 512; i++) perm[i] = src[i & 255];
+  return perm;
+})();
+
+function fadePerlin(t) {
+  return t * t * t * (t * (t * 6 - 15) + 10);
+}
+
+function lerpPerlin(a, b, t) {
+  return a + t * (b - a);
+}
+
+function gradPerlin(hash, x, y) {
+  switch (hash & 3) {
+    case 0: return x + y;
+    case 1: return -x + y;
+    case 2: return x - y;
+    default: return -x - y;
+  }
+}
+
+function perlin2(x, y) {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = fadePerlin(xf);
+  const v = fadePerlin(yf);
+  const X = xi & 255;
+  const Y = yi & 255;
+  const aa = HEIGHT_PERM[HEIGHT_PERM[X] + Y];
+  const ab = HEIGHT_PERM[HEIGHT_PERM[X] + Y + 1];
+  const ba = HEIGHT_PERM[HEIGHT_PERM[X + 1] + Y];
+  const bb = HEIGHT_PERM[HEIGHT_PERM[X + 1] + Y + 1];
+  return lerpPerlin(
+    lerpPerlin(gradPerlin(aa, xf, yf), gradPerlin(ba, xf - 1, yf), u),
+    lerpPerlin(gradPerlin(ab, xf, yf - 1), gradPerlin(bb, xf - 1, yf - 1), u),
+    v
+  );
+}
+
+function fbmHeight(x, y) {
+  let sum = 0;
+  let amp = 1;
+  let freq = 1;
+  let norm = 0;
+  for (let octave = 0; octave < 5; octave++) {
+    sum += amp * perlin2(x * freq, y * freq);
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return sum / norm;
+}
+
+function terrainHeight(tx, ty) {
+  const n = fbmHeight((tx + 40) * 0.08, (ty + 40) * 0.08);
+  return Math.max(0, Math.min(1, n * 0.72 + 0.5));
+}
+
+const WATER_LEVEL = 0.38;
+
+function isAuthoredGround(tx, ty) {
+  if (tx === 22 || tx === 23 || ty === 22) return true;
+
+  if (
+    (ty === -20 && tx >= 22 && tx <= 27) ||
+    (ty === -28 && tx >= 22 && tx <= 37) ||
+    (ty === -35 && tx >= 13 && tx <= 23)
+  ) {
+    return true;
+  }
+
+  if (tx === 36 && ty === 18) return true;
+  if (tx > 32 && tx < 40 && ty > 12 && ty < 18) return true;
+  return false;
+}
+
 function isWallTile(x, y) {
   if (
     !Number.isFinite(x) ||
@@ -497,6 +588,10 @@ function isWallTile(x, y) {
     if (wall) {
       return !(tx === 36 && ty === 18);
     }
+  }
+
+  if (!isAuthoredGround(tx, ty) && terrainHeight(tx, ty) < WATER_LEVEL) {
+    return true;
   }
 
   return false;
