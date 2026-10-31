@@ -6,14 +6,33 @@ const path = require('path');
 const PORT = process.env.PORT || 3000;
 const SAVE_FILE = path.join(__dirname, 'players.json');
 
+// World coordinates:
+// North is UP, so northern locations have negative Y.
+const WORLD = {
+  minX: 0,
+  maxX: 89,
+  minY: -45,
+  maxY: 89,
+  wildernessBoundaryY: 0
+};
+
+const SPAWN = { x: 22, y: 22 };
+
+const ENEMY_ATTACK_INTERVAL_MS = 1200;
+const ENEMY_MELEE_RANGE = 1.5;
+const RESPAWN_PROTECTION_MS = 3000;
+
 let savedAccounts = {};
 
 if (fs.existsSync(SAVE_FILE)) {
   try {
-    savedAccounts = JSON.parse(fs.readFileSync(SAVE_FILE, 'utf8'));
-    console.log('[RuneServer] Loaded saved player accounts from disk.');
+    savedAccounts = JSON.parse(
+      fs.readFileSync(SAVE_FILE, 'utf8')
+    );
+
+    console.log('[RuneServer] Loaded saved accounts.');
   } catch (err) {
-    console.error('[RuneServer] Error parsing players.json:', err);
+    console.error('[RuneServer] Error loading accounts:', err);
   }
 }
 
@@ -30,112 +49,65 @@ function saveAccountsToDisk() {
 }
 
 const server = http.createServer((req, res) => {
-  const filePath = path.join(__dirname, 'index.html');
-
-  fs.readFile(filePath, (err, content) => {
+  fs.readFile(path.join(__dirname, 'index.html'), (err, content) => {
     if (err) {
       res.writeHead(404, { 'Content-Type': 'text/plain' });
       res.end('Error: index.html not found on server.');
-    } else {
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(content, 'utf-8');
+      return;
     }
+
+    res.writeHead(200, { 'Content-Type': 'text/html' });
+    res.end(content, 'utf-8');
   });
 });
 
 const wss = new WebSocketServer({ server });
 
-console.log(`[RuneServer] Starting on port ${PORT}`);
-
 const ITEM_DB = {
   coins: {
-    id: 'coins',
-    name: 'Coins',
-    icon: '🪙',
-    buyPrice: 0,
-    sellPrice: 1,
-    stackable: true,
-    slot: null
+    id: 'coins', name: 'Coins', icon: '🪙',
+    buyPrice: 0, sellPrice: 1,
+    stackable: true, slot: null
   },
-
   bones: {
-    id: 'bones',
-    name: 'Bones',
-    icon: '🦴',
-    buyPrice: 10,
-    sellPrice: 5,
-    stackable: false,
-    slot: null
+    id: 'bones', name: 'Bones', icon: '🦴',
+    buyPrice: 10, sellPrice: 5,
+    stackable: false, slot: null
   },
-
   goblin_hide: {
-    id: 'goblin_hide',
-    name: 'Goblin Hide',
-    icon: '📜',
-    buyPrice: 25,
-    sellPrice: 12,
-    stackable: false,
-    slot: null
+    id: 'goblin_hide', name: 'Goblin Hide', icon: '📜',
+    buyPrice: 25, sellPrice: 12,
+    stackable: false, slot: null
   },
-
   bread: {
-    id: 'bread',
-    name: 'Bread',
-    icon: '🍞',
-    buyPrice: 12,
-    sellPrice: 6,
-    stackable: false,
-    slot: null
+    id: 'bread', name: 'Bread', icon: '🍞',
+    buyPrice: 12, sellPrice: 6,
+    stackable: false, slot: null
   },
-
   iron_sword: {
-    id: 'iron_sword',
-    name: 'Iron Sword',
-    icon: '🗡️',
-    buyPrice: 150,
-    sellPrice: 75,
-    stackable: false,
-    slot: 'weapon'
+    id: 'iron_sword', name: 'Iron Sword', icon: '🗡️',
+    buyPrice: 150, sellPrice: 75,
+    stackable: false, slot: 'weapon'
   },
-
   bronze_helm: {
-    id: 'bronze_helm',
-    name: 'Bronze Helm',
-    icon: '🪖',
-    buyPrice: 80,
-    sellPrice: 40,
-    stackable: false,
-    slot: 'head'
+    id: 'bronze_helm', name: 'Bronze Helm', icon: '🪖',
+    buyPrice: 80, sellPrice: 40,
+    stackable: false, slot: 'head'
   },
-
   wooden_shield: {
-    id: 'wooden_shield',
-    name: 'Wooden Shield',
-    icon: '🛡️',
-    buyPrice: 110,
-    sellPrice: 55,
-    stackable: false,
-    slot: 'shield'
+    id: 'wooden_shield', name: 'Wooden Shield', icon: '🛡️',
+    buyPrice: 110, sellPrice: 55,
+    stackable: false, slot: 'shield'
   },
-
   fire_rune: {
-    id: 'fire_rune',
-    name: 'Fire Rune',
-    icon: '🔥',
-    buyPrice: 15,
-    sellPrice: 7,
-    stackable: true,
-    slot: null
+    id: 'fire_rune', name: 'Fire Rune', icon: '🔥',
+    buyPrice: 15, sellPrice: 7,
+    stackable: true, slot: null
   },
-
   rune_scimitar: {
-    id: 'rune_scimitar',
-    name: 'Rune Scimitar',
-    icon: '✨',
-    buyPrice: 1500,
-    sellPrice: 750,
-    stackable: false,
-    slot: 'weapon'
+    id: 'rune_scimitar', name: 'Rune Scimitar', icon: '✨',
+    buyPrice: 1500, sellPrice: 750,
+    stackable: false, slot: 'weapon'
   }
 };
 
@@ -149,119 +121,95 @@ const SHOP_STOCK = [
 ];
 
 const players = {};
+const respawnProtectionUntil = new Map();
 let groundItems = [];
 
-// Enemy retaliation settings.
-const ENEMY_ATTACK_INTERVAL_MS = 1200;
-const ENEMY_MELEE_RANGE = 1.5;
-const RESPAWN_PROTECTION_MS = 3000;
+function makeNpc(id, name, x, y, hp, level, type, region) {
+  return {
+    id,
+    name,
+    x,
+    y,
+    targetX: x,
+    targetY: y,
+    spawnX: x,
+    spawnY: y,
+    hp,
+    maxHp: hp,
+    level,
+    alive: true,
+    respawnTicks: 0,
+    type,
+    region
+  };
+}
 
-const respawnProtectionUntil = new Map();
-
-// Original NPC locations retained.
 const npcs = [
-  {
-    id: 1,
-    name: 'Goblin',
-    x: 18,
-    y: 28,
-    targetX: 18,
-    targetY: 28,
-    hp: 12,
-    maxHp: 12,
-    level: 2,
-    alive: true,
-    respawnTicks: 0,
-    type: 'monster'
-  },
-  {
-    id: 2,
-    name: 'Goblin Guard',
-    x: 26,
-    y: 30,
-    targetX: 26,
-    targetY: 30,
-    hp: 20,
-    maxHp: 20,
-    level: 5,
-    alive: true,
-    respawnTicks: 0,
-    type: 'monster'
-  },
-  {
-    id: 3,
-    name: 'Shopkeeper Bob',
-    x: 36,
-    y: 15,
-    targetX: 36,
-    targetY: 15,
-    hp: 100,
-    maxHp: 100,
-    level: 15,
-    alive: true,
-    respawnTicks: 0,
-    type: 'shopkeeper'
-  },
-  {
-    id: 4,
-    name: 'Hobgoblin Brute',
-    x: 25,
-    y: 70,
-    targetX: 25,
-    targetY: 70,
-    hp: 45,
-    maxHp: 45,
-    level: 10,
-    alive: true,
-    respawnTicks: 0,
-    type: 'monster'
-  },
-  {
-    id: 5,
-    name: 'Moss Giant',
-    x: 35,
-    y: 75,
-    targetX: 35,
-    targetY: 75,
-    hp: 60,
-    maxHp: 60,
-    level: 12,
-    alive: true,
-    respawnTicks: 0,
-    type: 'monster'
-  },
-  {
-    id: 6,
-    name: 'Dark Warrior',
-    x: 15,
-    y: 80,
-    targetX: 15,
-    targetY: 80,
-    hp: 50,
-    maxHp: 50,
-    level: 10,
-    alive: true,
-    respawnTicks: 0,
-    type: 'monster'
-  }
+  makeNpc(
+    1, 'Goblin',
+    18, 28, 12, 2,
+    'monster', 'town'
+  ),
+  makeNpc(
+    2, 'Goblin Guard',
+    26, 30, 20, 5,
+    'monster', 'town'
+  ),
+  makeNpc(
+    3, 'Shopkeeper Bob',
+    36, 15, 100, 15,
+    'shopkeeper', 'town'
+  ),
+
+  // These enemies now spawn NORTH of town.
+  makeNpc(
+    4, 'Hobgoblin Brute',
+    25, -20, 45, 10,
+    'monster', 'wilderness'
+  ),
+  makeNpc(
+    5, 'Moss Giant',
+    35, -28, 60, 12,
+    'monster', 'wilderness'
+  ),
+  makeNpc(
+    6, 'Dark Warrior',
+    15, -35, 50, 10,
+    'monster', 'wilderness'
+  )
 ];
 
 function broadcast(data) {
   const message = JSON.stringify(data);
 
-  wss.clients.forEach((client) => {
+  wss.clients.forEach(client => {
     if (client.readyState === 1) {
       client.send(message);
     }
   });
 }
 
+function broadcastWorld() {
+  broadcast({
+    type: 'TICK_UPDATE',
+    players,
+    npcs,
+    groundItems
+  });
+}
+
+function rememberPlayer(player) {
+  if (player.ip) {
+    savedAccounts[player.ip] = player;
+  }
+}
+
 function addItemToInventory(player, itemId, count = 1) {
-  const itemInfo = ITEM_DB[itemId];
+  const info = ITEM_DB[itemId];
 
-  if (!itemInfo) return false;
+  if (!info) return false;
 
-  if (itemInfo.stackable) {
+  if (info.stackable) {
     const existing = player.inventory.find(
       item => item && item.id === itemId
     );
@@ -272,40 +220,75 @@ function addItemToInventory(player, itemId, count = 1) {
     }
   }
 
-  const emptyIndex = player.inventory.findIndex(
-    slot => slot === null
+  const empty = player.inventory.findIndex(
+    item => item === null
   );
 
-  if (emptyIndex !== -1) {
-    player.inventory[emptyIndex] = {
-      ...itemInfo,
-      count
-    };
+  if (empty === -1) return false;
 
+  player.inventory[empty] = { ...info, count };
+  return true;
+}
+
+function isWallTile(x, y) {
+  if (
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    x < WORLD.minX ||
+    x > WORLD.maxX ||
+    y < WORLD.minY ||
+    y > WORLD.maxY
+  ) {
     return true;
   }
 
-  return false;
-}
-
-// Shop building collision.
-function isWallTile(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
 
   if (tx >= 32 && tx <= 40 && ty >= 12 && ty <= 18) {
-    if (tx === 32 || tx === 40 || ty === 12 || ty === 18) {
-      if (tx === 36 && ty === 18) return false;
-      return true;
+    const wall =
+      tx === 32 ||
+      tx === 40 ||
+      ty === 12 ||
+      ty === 18;
+
+    if (wall) {
+      return !(tx === 36 && ty === 18);
     }
   }
 
   return false;
 }
 
+function respawnPlayer(player) {
+  player.hp = player.maxHp;
+  player.x = SPAWN.x;
+  player.y = SPAWN.y;
+  player.targetX = SPAWN.x;
+  player.targetY = SPAWN.y;
+  player.action = null;
+  player.isAttacking = false;
+
+  respawnProtectionUntil.set(
+    player.id,
+    Date.now() + RESPAWN_PROTECTION_MS
+  );
+
+  rememberPlayer(player);
+
+  broadcast({
+    type: 'HITSPLAT',
+    text: 'RESPAWNED',
+    x: SPAWN.x,
+    y: SPAWN.y,
+    color: '#ffdd77'
+  });
+}
+
 wss.on('connection', (ws, req) => {
+  const forwarded = req.headers['x-forwarded-for'];
   const clientIp =
-    req.headers['x-forwarded-for'] ||
+    (typeof forwarded === 'string' && forwarded) ||
     req.socket.remoteAddress ||
     'unknown_ip';
 
@@ -315,37 +298,49 @@ wss.on('connection', (ws, req) => {
     'player_' + Math.random().toString(36).substring(2, 9);
 
   let playerData;
+  let positionReset = false;
 
   if (savedAccounts[cleanIp]) {
     playerData = savedAccounts[cleanIp];
     playerData.id = playerId;
-    playerData.targetX = Math.round(playerData.x);
-    playerData.targetY = Math.round(playerData.y);
-
-    // Do not resume a saved attack on reconnect.
+    playerData.ip = cleanIp;
     playerData.action = null;
     playerData.isAttacking = false;
+
+    // Move saves from the old southern wilderness back to town.
+    // Also recover positions outside the new world boundary.
+    if (
+      playerData.y > 45 ||
+      isWallTile(playerData.x, playerData.y)
+    ) {
+      playerData.x = SPAWN.x;
+      playerData.y = SPAWN.y;
+      positionReset = true;
+    }
+
+    if (playerData.hp <= 0) {
+      playerData.hp = playerData.maxHp;
+      playerData.x = SPAWN.x;
+      playerData.y = SPAWN.y;
+      positionReset = true;
+    }
+
+    playerData.targetX = Math.round(playerData.x);
+    playerData.targetY = Math.round(playerData.y);
   } else {
-    const initialInv = Array(28).fill(null);
+    const inventory = Array(28).fill(null);
 
-    initialInv[0] = {
-      ...ITEM_DB.coins,
-      count: 100
-    };
-
-    initialInv[1] = {
-      ...ITEM_DB.bread,
-      count: 2
-    };
+    inventory[0] = { ...ITEM_DB.coins, count: 100 };
+    inventory[1] = { ...ITEM_DB.bread, count: 2 };
 
     playerData = {
       id: playerId,
       ip: cleanIp,
       name: `Hero_${playerId.substring(7)}`,
-      x: 22.0,
-      y: 22.0,
-      targetX: 22,
-      targetY: 22,
+      x: SPAWN.x,
+      y: SPAWN.y,
+      targetX: SPAWN.x,
+      targetY: SPAWN.y,
       hp: 20,
       maxHp: 20,
       combatLvl: 3,
@@ -364,16 +359,15 @@ wss.on('connection', (ws, req) => {
         weapon: null,
         shield: null
       },
-      inventory: initialInv,
+      inventory,
       action: null,
       isAttacking: false
     };
-
-    savedAccounts[cleanIp] = playerData;
-    saveAccountsToDisk();
   }
 
   players[playerId] = playerData;
+  rememberPlayer(playerData);
+  saveAccountsToDisk();
 
   ws.send(JSON.stringify({
     type: 'INIT',
@@ -381,23 +375,35 @@ wss.on('connection', (ws, req) => {
     players,
     npcs,
     groundItems,
-    shopStock: SHOP_STOCK
+    shopStock: SHOP_STOCK,
+    world: WORLD
   }));
+
+  if (positionReset) {
+    ws.send(JSON.stringify({
+      type: 'SERVER_MSG',
+      text: 'Your position was reset to town. The wilderness is now north of town.'
+    }));
+  }
 
   broadcast({
     type: 'PLAYER_JOINED',
-    player: players[playerId]
+    player: playerData
   });
 
-  ws.on('message', (message) => {
+  ws.on('message', message => {
     try {
       const data = JSON.parse(message);
       const p = players[playerId];
 
-      if (!p) return;
+      if (!p || !data || typeof data !== 'object') return;
 
       if (data.type === 'MOVE') {
-        if (!isWallTile(data.x, data.y)) {
+        if (
+          Number.isInteger(data.x) &&
+          Number.isInteger(data.y) &&
+          !isWallTile(data.x, data.y)
+        ) {
           p.targetX = data.x;
           p.targetY = data.y;
         }
@@ -405,90 +411,90 @@ wss.on('connection', (ws, req) => {
         p.action = null;
         p.isAttacking = false;
       } else if (data.type === 'ATTACK') {
-        p.action = {
-          type: 'ATTACK',
-          targetId: data.targetId
-        };
+        const npc = npcs.find(
+          enemy => enemy.id === data.targetId
+        );
+
+        if (npc && npc.alive && npc.type === 'monster') {
+          p.action = {
+            type: 'ATTACK',
+            targetId: npc.id
+          };
+        }
       } else if (data.type === 'SET_NAME') {
         if (
           typeof data.name === 'string' &&
-          data.name.trim().length > 0
+          data.name.trim()
         ) {
           p.name = data.name.trim().substring(0, 12);
-
-          savedAccounts[cleanIp] = p;
+          rememberPlayer(p);
           saveAccountsToDisk();
-
-          broadcast({
-            type: 'TICK_UPDATE',
-            players,
-            npcs,
-            groundItems
-          });
+          broadcastWorld();
         }
       } else if (data.type === 'UPGRADE_STAT') {
-        const statName = data.stat;
-
         if (
           p.statPoints > 0 &&
-          Object.prototype.hasOwnProperty.call(p.stats, statName)
+          Object.prototype.hasOwnProperty.call(
+            p.stats,
+            data.stat
+          )
         ) {
           p.statPoints--;
-          p.stats[statName]++;
+          p.stats[data.stat]++;
 
-          if (statName === 'hitpoints') {
+          if (data.stat === 'hitpoints') {
             p.maxHp += 2;
             p.hp = p.maxHp;
           }
 
-          savedAccounts[cleanIp] = p;
+          rememberPlayer(p);
           saveAccountsToDisk();
-
-          broadcast({
-            type: 'TICK_UPDATE',
-            players,
-            npcs,
-            groundItems
-          });
+          broadcastWorld();
         }
       } else if (data.type === 'EQUIP_ITEM') {
-        const slotIdx = data.slotIndex;
-        const item = p.inventory[slotIdx];
+        const index = data.slotIndex;
 
-        if (item && item.slot) {
-          const equipSlot = item.slot;
-          const currentEquipped = p.equipment[equipSlot];
+        if (
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= p.inventory.length
+        ) return;
 
-          p.equipment[equipSlot] = item;
-          p.inventory[slotIdx] = currentEquipped;
+        const item = p.inventory[index];
 
-          savedAccounts[cleanIp] = p;
+        if (
+          item &&
+          item.slot &&
+          Object.prototype.hasOwnProperty.call(
+            p.equipment,
+            item.slot
+          )
+        ) {
+          const old = p.equipment[item.slot];
+
+          p.equipment[item.slot] = item;
+          p.inventory[index] = old;
+
+          rememberPlayer(p);
           saveAccountsToDisk();
-
-          broadcast({
-            type: 'TICK_UPDATE',
-            players,
-            npcs,
-            groundItems
-          });
+          broadcastWorld();
         }
       } else if (data.type === 'UNEQUIP_ITEM') {
-        const slotName = data.slotName;
-        const item = p.equipment[slotName];
+        if (
+          !Object.prototype.hasOwnProperty.call(
+            p.equipment,
+            data.slotName
+          )
+        ) return;
+
+        const item = p.equipment[data.slotName];
 
         if (item) {
           if (addItemToInventory(p, item.id, item.count || 1)) {
-            p.equipment[slotName] = null;
-
-            savedAccounts[cleanIp] = p;
+            p.equipment[data.slotName] = null;
+            rememberPlayer(p);
             saveAccountsToDisk();
-
-            broadcast({
-              type: 'TICK_UPDATE',
-              players,
-              npcs,
-              groundItems
-            });
+            broadcastWorld();
           } else {
             ws.send(JSON.stringify({
               type: 'SERVER_MSG',
@@ -497,18 +503,20 @@ wss.on('connection', (ws, req) => {
           }
         }
       } else if (data.type === 'PICKUP') {
-        const itemIdx = groundItems.findIndex(
+        const index = groundItems.findIndex(
           item => item.id === data.itemId
         );
 
-        if (itemIdx !== -1) {
-          const item = groundItems[itemIdx];
+        if (index !== -1) {
+          const item = groundItems[index];
 
-          if (Math.hypot(p.x - item.x, p.y - item.y) <= 1.5) {
+          if (
+            Math.hypot(p.x - item.x, p.y - item.y) <= 1.5
+          ) {
             if (addItemToInventory(p, item.itemId, item.count)) {
-              groundItems.splice(itemIdx, 1);
+              groundItems.splice(index, 1);
 
-              savedAccounts[cleanIp] = p;
+              rememberPlayer(p);
               saveAccountsToDisk();
 
               broadcast({
@@ -524,401 +532,12 @@ wss.on('connection', (ws, req) => {
           }
         }
       } else if (data.type === 'SELL_ITEM') {
-        const slotItem = p.inventory[data.slotIndex];
+        const index = data.slotIndex;
 
-        if (slotItem && slotItem.id !== 'coins') {
-          const goldAmount =
-            slotItem.sellPrice * (slotItem.count || 1);
+        if (
+          !Number.isInteger(index) ||
+          index < 0 ||
+          index >= p.inventory.length
+        ) return;
 
-          p.inventory[data.slotIndex] = null;
-          addItemToInventory(p, 'coins', goldAmount);
-
-          savedAccounts[cleanIp] = p;
-          saveAccountsToDisk();
-        }
-      } else if (data.type === 'BUY_ITEM') {
-        const buyItem = ITEM_DB[data.itemId];
-
-        if (buyItem) {
-          const coinSlot = p.inventory.find(
-            item => item && item.id === 'coins'
-          );
-
-          if (coinSlot && coinSlot.count >= buyItem.buyPrice) {
-            if (addItemToInventory(p, data.itemId, 1)) {
-              coinSlot.count -= buyItem.buyPrice;
-
-              if (coinSlot.count <= 0) {
-                const coinIndex = p.inventory.findIndex(
-                  item => item && item.id === 'coins'
-                );
-
-                if (coinIndex !== -1) {
-                  p.inventory[coinIndex] = null;
-                }
-              }
-
-              savedAccounts[cleanIp] = p;
-              saveAccountsToDisk();
-            }
-          }
-        }
-      } else if (data.type === 'CHAT') {
-        broadcast({
-          type: 'CHAT_MSG',
-          sender: p.name,
-          text: data.text
-        });
-      }
-    } catch (err) {
-      // Ignore malformed messages.
-    }
-  });
-
-  ws.on('close', () => {
-    if (players[playerId]) {
-      savedAccounts[cleanIp] = players[playerId];
-      saveAccountsToDisk();
-    }
-
-    respawnProtectionUntil.delete(playerId);
-    delete players[playerId];
-
-    broadcast({
-      type: 'PLAYER_LEFT',
-      id: playerId
-    });
-  });
-});
-
-// Movement and world updates.
-setInterval(() => {
-  const moveSpeed = 0.15;
-
-  Object.values(players).forEach((p) => {
-    if (
-      Math.round(p.x) !== p.targetX ||
-      Math.round(p.y) !== p.targetY
-    ) {
-      let nextX = p.x;
-      let nextY = p.y;
-
-      if (p.x < p.targetX) {
-        nextX = Math.min(p.targetX, p.x + moveSpeed);
-      } else if (p.x > p.targetX) {
-        nextX = Math.max(p.targetX, p.x - moveSpeed);
-      }
-
-      if (p.y < p.targetY) {
-        nextY = Math.min(p.targetY, p.y + moveSpeed);
-      } else if (p.y > p.targetY) {
-        nextY = Math.max(p.targetY, p.y - moveSpeed);
-      }
-
-      if (!isWallTile(nextX, nextY)) {
-        p.x = nextX;
-        p.y = nextY;
-      } else {
-        p.targetX = Math.round(p.x);
-        p.targetY = Math.round(p.y);
-      }
-    }
-  });
-
-  npcs.forEach((npc) => {
-    if (!npc.alive || npc.type === 'shopkeeper') return;
-
-    if (
-      Math.round(npc.x) !== npc.targetX ||
-      Math.round(npc.y) !== npc.targetY
-    ) {
-      if (npc.x < npc.targetX) {
-        npc.x = Math.min(npc.targetX, npc.x + moveSpeed);
-      } else if (npc.x > npc.targetX) {
-        npc.x = Math.max(npc.targetX, npc.x - moveSpeed);
-      }
-
-      if (npc.y < npc.targetY) {
-        npc.y = Math.min(npc.targetY, npc.y + moveSpeed);
-      } else if (npc.y > npc.targetY) {
-        npc.y = Math.max(npc.targetY, npc.y - moveSpeed);
-      }
-    } else if (Math.random() < 0.02) {
-      const rx = Math.max(
-        5,
-        Math.min(
-          45,
-          npc.x + (Math.floor(Math.random() * 5) - 2)
-        )
-      );
-
-      const ry = Math.max(
-        5,
-        Math.min(
-          85,
-          npc.y + (Math.floor(Math.random() * 5) - 2)
-        )
-      );
-
-      if (!isWallTile(rx, ry)) {
-        npc.targetX = rx;
-        npc.targetY = ry;
-      }
-    }
-  });
-
-  broadcast({
-    type: 'TICK_UPDATE',
-    players,
-    npcs,
-    groundItems
-  });
-}, 50);
-
-// Player attacks and enemy respawning.
-setInterval(() => {
-  Object.values(players).forEach((p) => {
-    p.isAttacking = false;
-
-    if (p.action && p.action.type === 'ATTACK') {
-      const npc = npcs.find(
-        enemy => enemy.id === p.action.targetId
-      );
-
-      if (npc && npc.alive && npc.type === 'monster') {
-        if (Math.hypot(p.x - npc.x, p.y - npc.y) <= 1.5) {
-          const hit =
-            Math.floor(Math.random() * 5) +
-            Math.floor(p.stats.strength / 3);
-
-          npc.hp = Math.max(0, npc.hp - hit);
-          p.isAttacking = true;
-          p.xp += Math.max(10, hit * 4);
-
-          if (p.xp >= p.combatLvl * 50) {
-            p.combatLvl++;
-            p.statPoints += 3;
-
-            broadcast({
-              type: 'HITSPLAT',
-              text: 'LEVEL UP!',
-              x: Math.round(p.x),
-              y: Math.round(p.y),
-              color: '#ffff00'
-            });
-          }
-
-          broadcast({
-            type: 'HITSPLAT',
-            text: hit === 0 ? '0' : `-${hit}`,
-            x: Math.round(npc.x),
-            y: Math.round(npc.y),
-            color: hit === 0 ? '#888888' : '#ff3333'
-          });
-
-          if (npc.hp <= 0) {
-            npc.alive = false;
-            npc.respawnTicks = 15;
-            p.action = null;
-            p.isAttacking = false;
-
-            const drops = ['bones'];
-
-            if (Math.random() < 0.7) {
-              drops.push('coins');
-            }
-
-            if (npc.level >= 10 && Math.random() < 0.15) {
-              drops.push('rune_scimitar');
-            } else if (Math.random() < 0.3) {
-              drops.push('goblin_hide');
-            }
-
-            drops.forEach((dropId) => {
-              groundItems.push({
-                id:
-                  'item_' +
-                  Math.random().toString(36).substring(2, 9),
-                itemId: dropId,
-                name: ITEM_DB[dropId].name,
-                icon: ITEM_DB[dropId].icon,
-                count: dropId === 'coins' ? 50 : 1,
-                x: Math.round(npc.x),
-                y: Math.round(npc.y)
-              });
-            });
-
-            broadcast({
-              type: 'GROUND_UPDATE',
-              groundItems
-            });
-          }
-
-          if (p.ip && savedAccounts[p.ip]) {
-            savedAccounts[p.ip] = p;
-            saveAccountsToDisk();
-          }
-        } else {
-          p.targetX = Math.round(npc.x);
-          p.targetY = Math.round(npc.y);
-        }
-      } else {
-        p.action = null;
-      }
-    }
-  });
-
-  npcs.forEach((npc) => {
-    if (!npc.alive && --npc.respawnTicks <= 0) {
-      npc.alive = true;
-      npc.hp = npc.maxHp;
-    }
-  });
-}, 600);
-
-// Enemy retaliation.
-// Each living monster attacks one nearby player fighting it.
-setInterval(() => {
-  const now = Date.now();
-  let accountsChanged = false;
-
-  npcs.forEach((npc) => {
-    if (!npc.alive || npc.type !== 'monster') return;
-
-    const target = Object.values(players)
-      .filter((p) => {
-        const fightingThisEnemy =
-          p.action &&
-          p.action.type === 'ATTACK' &&
-          p.action.targetId === npc.id;
-
-        const protectedUntil =
-          respawnProtectionUntil.get(p.id) || 0;
-
-        return (
-          p.hp > 0 &&
-          fightingThisEnemy &&
-          now >= protectedUntil &&
-          Math.hypot(p.x - npc.x, p.y - npc.y) <=
-            ENEMY_MELEE_RANGE
-        );
-      })
-      .sort((a, b) => {
-        const distanceA = Math.hypot(
-          a.x - npc.x,
-          a.y - npc.y
-        );
-
-        const distanceB = Math.hypot(
-          b.x - npc.x,
-          b.y - npc.y
-        );
-
-        return distanceA - distanceB;
-      })[0];
-
-    if (!target) return;
-
-    // Maximum damage:
-    // Level 2 = 2, level 5 = 4,
-    // level 10 = 6, level 12 = 7.
-    const maxHit = Math.max(
-      2,
-      Math.ceil(npc.level / 2) + 1
-    );
-
-    const defense = Math.max(
-      1,
-      Number(target.stats?.defense) || 1
-    );
-
-    let armorBonus = 0;
-
-    if (target.equipment?.head?.id === 'bronze_helm') {
-      armorBonus += 2;
-    }
-
-    if (target.equipment?.shield?.id === 'wooden_shield') {
-      armorBonus += 3;
-    }
-
-    const hitChance = Math.max(
-      0.35,
-      Math.min(
-        0.9,
-        0.8 +
-          npc.level * 0.01 -
-          defense * 0.015 -
-          armorBonus * 0.025
-      )
-    );
-
-    let damage = 0;
-
-    if (Math.random() < hitChance) {
-      damage = 1 + Math.floor(Math.random() * maxHit);
-    }
-
-    damage = Math.min(target.hp, damage);
-    target.hp = Math.max(0, target.hp - damage);
-
-    broadcast({
-      type: 'HITSPLAT',
-      text: damage > 0 ? `-${damage}` : 'BLOCK',
-      x: Math.round(target.x),
-      y: Math.round(target.y),
-      color: damage > 0 ? '#ff5555' : '#99bbdd'
-    });
-
-    if (target.hp <= 0) {
-      // Respawn in town with full HP.
-      // Inventory, equipment, coins, and XP are retained.
-      target.hp = target.maxHp;
-      target.x = 22;
-      target.y = 22;
-      target.targetX = 22;
-      target.targetY = 22;
-      target.action = null;
-      target.isAttacking = false;
-
-      respawnProtectionUntil.set(
-        target.id,
-        now + RESPAWN_PROTECTION_MS
-      );
-
-      broadcast({
-        type: 'HITSPLAT',
-        text: 'RESPAWNED',
-        x: 22,
-        y: 22,
-        color: '#ffdd77'
-      });
-    }
-
-    if (damage > 0 && target.ip) {
-      savedAccounts[target.ip] = target;
-      accountsChanged = true;
-    }
-  });
-
-  for (const playerId of respawnProtectionUntil.keys()) {
-    if (!players[playerId]) {
-      respawnProtectionUntil.delete(playerId);
-    }
-  }
-
-  if (accountsChanged) {
-    saveAccountsToDisk();
-  }
-
-  broadcast({
-    type: 'TICK_UPDATE',
-    players,
-    npcs,
-    groundItems
-  });
-}, ENEMY_ATTACK_INTERVAL_MS);
-
-server.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-});
+        const item = p.inventory
