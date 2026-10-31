@@ -198,12 +198,12 @@ canvas {
 
 #inventory-win {
   bottom: 76px;
-  right: min(320px, calc(100vw - 306px));
+  right: min(320px, max(8px, calc(100vw - 306px)));
 }
 
 #shop-win {
   bottom: 76px;
-  right: min(620px, calc(100vw - 306px));
+  right: min(620px, max(8px, calc(100vw - 306px)));
 }
 
 .ui-header {
@@ -364,6 +364,76 @@ canvas {
   cursor: pointer;
 }
 
+.item-help-hint {
+  color: #b8a47d;
+  font: 11px/1.4 'Trebuchet MS', sans-serif;
+  margin-bottom: 10px;
+}
+
+.inv-slot, .equip-slot, .shop-item-row {
+  -webkit-touch-callout: none;
+}
+
+.item-holding {
+  outline: 2px solid #e8c66b;
+  outline-offset: -2px;
+}
+
+#item-info {
+  position: fixed;
+  display: none;
+  width: 290px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow-y: auto;
+  padding: 12px;
+  background: rgba(19, 17, 13, .98);
+  border: 2px solid #b08b48;
+  border-radius: 9px;
+  color: #e8dcc0;
+  box-shadow: 0 8px 28px #000c;
+  z-index: 100000;
+}
+
+#item-info.visible {
+  display: block;
+}
+
+.item-info-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.item-info-name {
+  color: #f4d181;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.item-info-description {
+  font: 13px/1.5 'Trebuchet MS', sans-serif;
+}
+
+.item-info-details {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #51412b;
+  color: #bdac88;
+  font: 11px/1.6 'Trebuchet MS', sans-serif;
+}
+
+.item-info-close {
+  background: transparent;
+  border: none;
+  color: #d6bd86;
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 3px;
+}
+
 #chat-container {
   position: absolute;
   bottom: 20px;
@@ -480,17 +550,21 @@ canvas {
         <button class="shop-btn" onclick="saveName()">Save</button>
       </div>
 
+      <div class="item-help-hint">
+        Hold equipped items to inspect them. Tap to unequip.
+      </div>
+
       <div class="equip-grid">
         <div class="equip-slot" id="equip-head"
-          onclick="unequipItem('head')">
+          data-equipment-slot="head" onclick="unequipItem('head')">
           <span class="slot-label">Head</span>
         </div>
         <div class="equip-slot" id="equip-weapon"
-          onclick="unequipItem('weapon')">
+          data-equipment-slot="weapon" onclick="unequipItem('weapon')">
           <span class="slot-label">Weapon</span>
         </div>
         <div class="equip-slot" id="equip-shield"
-          onclick="unequipItem('shield')">
+          data-equipment-slot="shield" onclick="unequipItem('shield')">
           <span class="slot-label">Shield</span>
         </div>
       </div>
@@ -530,6 +604,9 @@ canvas {
         onclick="toggleWindow('inventory-win')">✕</span>
     </div>
     <div class="ui-body">
+      <div class="item-help-hint">
+        Hold an item to see what it is and what it does.
+      </div>
       <div class="grid-28" id="inventory-grid"></div>
     </div>
   </div>
@@ -544,6 +621,9 @@ canvas {
       <div style="color:#f0c868;margin-bottom:8px">
         Tap inventory items to SELL, or buy below:
       </div>
+      <div class="item-help-hint">
+        Hold a shop item to inspect it without buying.
+      </div>
       <div id="shop-items-list"></div>
     </div>
   </div>
@@ -557,6 +637,8 @@ canvas {
     <input id="chat-input" type="text" placeholder="Type message...">
   </div>
 </div>
+
+<div id="item-info" role="dialog" aria-label="Item information"></div>
 
 <script>
 'use strict';
@@ -614,6 +696,8 @@ socket.onclose = () => {
   el.textContent = '● Closed';
   el.style.color = '#ff6666';
   endJoystick();
+  cancelItemHold();
+  hideItemInfo();
   addChat('Disconnected. Refresh to reconnect.', 'system');
 };
 
@@ -703,8 +787,12 @@ function goFullscreen() {
 }
 
 function toggleWindow(id) {
+  cancelItemHold();
+  hideItemInfo();
+
   const el = document.getElementById(id);
   el.classList.toggle('active');
+
   if (el.classList.contains('active')) bringToFront(el);
 }
 
@@ -720,6 +808,300 @@ function upgradeStat(stat) {
 function unequipItem(slotName) {
   send({ type: 'UNEQUIP_ITEM', slotName });
 }
+
+// Descriptions reflect the current server mechanics.
+const ITEM_DESCRIPTIONS = {
+  coins: {
+    type: 'Currency',
+    description:
+      'Money used to buy items from Bob’s General Store.'
+  },
+  bones: {
+    type: 'Loot',
+    description:
+      'Remains dropped by defeated enemies. Sell them to Bob for coins. ' +
+      'Burying bones and prayer training are not implemented yet.'
+  },
+  goblin_hide: {
+    type: 'Loot',
+    description:
+      'A hide dropped by enemies. Sell it to Bob for coins. ' +
+      'Crafting with hides is not implemented yet.'
+  },
+  bread: {
+    type: 'Food',
+    description:
+      'A loaf of bread. It can be bought or sold, but eating and ' +
+      'healing with food are not implemented in the current game.'
+  },
+  iron_sword: {
+    type: 'Weapon',
+    description:
+      'Can be equipped in your weapon slot. The current combat ' +
+      'code does not give this weapon an extra damage bonus yet.'
+  },
+  bronze_helm: {
+    type: 'Head armor',
+    description:
+      'Can be equipped in your head slot. Adds 2 armor bonus, ' +
+      'improving your chance to block enemy attacks.'
+  },
+  wooden_shield: {
+    type: 'Shield',
+    description:
+      'Can be equipped in your shield slot. Adds 3 armor bonus, ' +
+      'improving your chance to block enemy attacks.'
+  },
+  fire_rune: {
+    type: 'Magic supply',
+    description:
+      'A magical rune intended for fire spells. You can buy or sell ' +
+      'it, but spellcasting is not implemented yet.'
+  },
+  rune_scimitar: {
+    type: 'Weapon',
+    description:
+      'A rare weapon that can drop from level 10+ enemies. ' +
+      'Can be equipped in your weapon slot, but does not currently ' +
+      'give an extra damage bonus.'
+  }
+};
+
+const itemInfoPanel = document.getElementById('item-info');
+
+function hideItemInfo() {
+  itemInfoPanel.classList.remove('visible');
+}
+
+function showItemInfo(item, pointerX, pointerY) {
+  if (!item) return;
+
+  const info = ITEM_DESCRIPTIONS[item.id] || {
+    type: item.slot ? 'Equipment' : 'Item',
+    description: 'No description is available for this item yet.'
+  };
+
+  itemInfoPanel.replaceChildren();
+
+  const header = document.createElement('div');
+  header.className = 'item-info-header';
+
+  const name = document.createElement('div');
+  name.className = 'item-info-name';
+  name.textContent = `${item.icon || ''} ${item.name || item.id}`;
+
+  const close = document.createElement('button');
+  close.className = 'item-info-close';
+  close.type = 'button';
+  close.textContent = '×';
+  close.setAttribute('aria-label', 'Close item information');
+  close.onclick = hideItemInfo;
+
+  header.append(name, close);
+
+  const description = document.createElement('div');
+  description.className = 'item-info-description';
+  description.textContent = info.description;
+
+  const details = document.createElement('div');
+  details.className = 'item-info-details';
+
+  const lines = [
+    `Type: ${info.type}`,
+    `Quantity: ${item.count || 1}`
+  ];
+
+  if (Number.isFinite(item.buyPrice)) {
+    lines.push(`Shop buy price: ${item.buyPrice} coins each`);
+  }
+
+  if (Number.isFinite(item.sellPrice)) {
+    lines.push(`Shop sell value: ${item.sellPrice} coins each`);
+  }
+
+  if (item.slot) {
+    lines.push(`Equipment slot: ${item.slot}`);
+  }
+
+  lines.push('Tap outside this panel to close.');
+
+  lines.forEach(text => {
+    const line = document.createElement('div');
+    line.textContent = text;
+    details.appendChild(line);
+  });
+
+  itemInfoPanel.append(header, description, details);
+  itemInfoPanel.classList.add('visible');
+
+  const bounds = itemInfoPanel.getBoundingClientRect();
+  let left = pointerX + 12;
+  let top = pointerY - bounds.height - 14;
+
+  if (top < 8) top = pointerY + 16;
+
+  left = Math.max(8, Math.min(innerWidth - bounds.width - 8, left));
+  top = Math.max(8, Math.min(innerHeight - bounds.height - 8, top));
+
+  itemInfoPanel.style.left = left + 'px';
+  itemInfoPanel.style.top = top + 'px';
+}
+
+// Use delegated events so UI redraws do not add duplicate listeners.
+const ITEM_SELECTOR =
+  '.inv-slot[data-inventory-index], ' +
+  '.equip-slot[data-equipment-slot], ' +
+  '.shop-item-row[data-shop-item]';
+
+function itemTarget(target) {
+  if (!(target instanceof Element)) return null;
+  return target.closest(ITEM_SELECTOR);
+}
+
+function itemFromElement(element) {
+  const me = state.players[state.playerId];
+
+  if (element.hasAttribute('data-inventory-index')) {
+    return me?.inventory?.[Number(element.dataset.inventoryIndex)] || null;
+  }
+
+  if (element.hasAttribute('data-equipment-slot')) {
+    return me?.equipment?.[element.dataset.equipmentSlot] || null;
+  }
+
+  if (element.hasAttribute('data-shop-item')) {
+    return state.shopStock.find(
+      item => item.id === element.dataset.shopItem
+    ) || null;
+  }
+
+  return null;
+}
+
+let activeItemHold = null;
+let suppressItemClickUntil = 0;
+
+function cancelItemHold() {
+  if (!activeItemHold) return;
+
+  clearTimeout(activeItemHold.timer);
+  activeItemHold.element.classList.remove('item-holding');
+  activeItemHold = null;
+}
+
+document.addEventListener('pointerdown', event => {
+  if (itemInfoPanel.contains(event.target)) return;
+
+  hideItemInfo();
+  cancelItemHold();
+
+  // A new deliberate tap should work normally.
+  suppressItemClickUntil = 0;
+
+  if (event.pointerType === 'mouse' && event.button !== 0) return;
+
+  const element = itemTarget(event.target);
+  if (!element) return;
+
+  const item = itemFromElement(element);
+  if (!item) return;
+
+  const hold = {
+    element,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    fired: false,
+    timer: null
+  };
+
+  activeItemHold = hold;
+  element.classList.add('item-holding');
+
+  hold.timer = setTimeout(() => {
+    if (
+      activeItemHold !== hold ||
+      !hold.element.isConnected
+    ) return;
+
+    const currentItem = itemFromElement(hold.element);
+    if (!currentItem) {
+      cancelItemHold();
+      return;
+    }
+
+    hold.fired = true;
+    suppressItemClickUntil = Infinity;
+
+    showItemInfo(
+      currentItem,
+      hold.startX,
+      hold.startY
+    );
+  }, 500);
+}, true);
+
+document.addEventListener('pointermove', event => {
+  const hold = activeItemHold;
+  if (!hold || hold.pointerId !== event.pointerId) return;
+
+  if (
+    Math.hypot(
+      event.clientX - hold.startX,
+      event.clientY - hold.startY
+    ) > 10
+  ) {
+    if (hold.fired) suppressItemClickUntil = Date.now() + 1000;
+    cancelItemHold();
+  }
+}, true);
+
+document.addEventListener('pointerup', event => {
+  const hold = activeItemHold;
+  if (!hold || hold.pointerId !== event.pointerId) return;
+
+  if (hold.fired) {
+    suppressItemClickUntil = Date.now() + 1000;
+  }
+
+  cancelItemHold();
+}, true);
+
+document.addEventListener('pointercancel', () => {
+  if (activeItemHold?.fired) {
+    suppressItemClickUntil = Date.now() + 1000;
+  }
+
+  cancelItemHold();
+}, true);
+
+// Prevent equip, unequip, sell, or buy after a completed long press.
+document.addEventListener('click', event => {
+  if (
+    itemTarget(event.target) &&
+    Date.now() < suppressItemClickUntil
+  ) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    suppressItemClickUntil = 0;
+  }
+}, true);
+
+document.addEventListener('contextmenu', event => {
+  if (itemTarget(event.target)) event.preventDefault();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') {
+    cancelItemHold();
+    hideItemInfo();
+  }
+});
+
+addEventListener('resize', () => {
+  cancelItemHold();
+  hideItemInfo();
+});
 
 let lastUiSignature = '';
 
@@ -757,12 +1139,13 @@ function renderUI(force = false) {
   if (!force && signature === lastUiSignature) return;
   lastUiSignature = signature;
 
+  cancelItemHold();
+
   document.getElementById('stat-points-label').textContent =
     `Stat Points: ${me.statPoints}`;
 
   ['attack', 'strength', 'defense', 'hitpoints'].forEach(stat => {
-    document.getElementById('stat-' + stat).textContent =
-      me.stats[stat];
+    document.getElementById('stat-' + stat).textContent = me.stats[stat];
   });
 
   ['head', 'weapon', 'shield'].forEach(slot => {
@@ -775,7 +1158,7 @@ function renderUI(force = false) {
     el.appendChild(label);
 
     const item = me.equipment[slot];
-    el.title = item ? item.name : slot;
+    el.title = item ? `${item.name} — hold to inspect` : slot;
 
     if (item) {
       const icon = document.createElement('span');
@@ -791,9 +1174,10 @@ function renderUI(force = false) {
   me.inventory.forEach((item, index) => {
     const el = document.createElement('div');
     el.className = 'inv-slot';
+    el.dataset.inventoryIndex = index;
 
     if (item) {
-      el.title = item.name;
+      el.title = `${item.name} — hold to inspect`;
 
       const icon = document.createElement('span');
       icon.className = 'item-icon';
@@ -827,6 +1211,7 @@ function renderUI(force = false) {
   state.shopStock.forEach(item => {
     const row = document.createElement('div');
     row.className = 'shop-item-row';
+    row.dataset.shopItem = item.id;
 
     const label = document.createElement('span');
     label.textContent = `${item.icon} ${item.name} (${item.buyPrice}g)`;
@@ -990,7 +1375,13 @@ joystickContainer.addEventListener('pointerup', event => {
 
 joystickContainer.addEventListener('pointercancel', endJoystick);
 joystickContainer.addEventListener('lostpointercapture', endJoystick);
-addEventListener('blur', endJoystick);
+
+addEventListener('blur', () => {
+  endJoystick();
+  cancelItemHold();
+  hideItemInfo();
+  suppressItemClickUntil = 0;
+});
 
 function cameraPosition() {
   const me = state.players[state.playerId];
@@ -1054,7 +1445,7 @@ canvas.addEventListener('click', event => {
   }
 });
 
-// Deterministic terrain: decorations do not move between frames.
+// Deterministic terrain.
 function terrainHash(x, y, salt = 0) {
   let value =
     Math.imul(x, 374761393) ^
@@ -1068,10 +1459,8 @@ function terrainHash(x, y, salt = 0) {
 function tileAt(x, y) {
   let tile = y < WORLD.wildernessBoundaryY ? 5 : 0;
 
-  // Main north-south road and town crossroads.
   if (x === 22 || x === 23 || y === 22) tile = 1;
 
-  // Paths into the three wilderness clearings.
   if (
     (y === -20 && x >= 22 && x <= 27) ||
     (y === -28 && x >= 22 && x <= 37) ||
@@ -1080,7 +1469,6 @@ function tileAt(x, y) {
     tile = 1;
   }
 
-  // Existing shop matches the server's collision coordinates.
   if (x >= 32 && x <= 40 && y >= 12 && y <= 18) {
     const wall =
       x === 32 || x === 40 ||
@@ -1161,7 +1549,6 @@ function createTerrainTile(x, y) {
     Math.hypot(x - 15, y + 35) < 4
   );
 
-  // Decorative scenery is walk-through, matching server collision.
   if (north && !clearing && seed % 10 === 0) {
     rect(3, 25, 26, 4, '#18231d');
     rect(14, 17, 5, 12, '#59402d');
@@ -1186,7 +1573,6 @@ function createTerrainTile(x, y) {
     rect(10, 15, 6, 4, seed % 2 ? '#d7b456' : '#bd8fbd');
   }
 
-  // Broken wall around the Dark Warrior's clearing.
   if (
     north &&
     x >= 10 && x <= 19 &&
@@ -1202,7 +1588,6 @@ function createTerrainTile(x, y) {
     rect(5, 20, 8, 4, '#45613a');
   }
 
-  // Ruined pillars near the Moss Giant's clearing.
   if ((x === 29 || x === 38) && y === -24) {
     rect(5, 23, 24, 4, '#202620');
     rect(8, 4, 16, 21, '#62685b');
@@ -1212,7 +1597,6 @@ function createTerrainTile(x, y) {
     rect(8, 22, 16, 4, '#45613a');
   }
 
-  // Campfire ring. Flames are animated separately.
   if (x === 18 && y === -33) {
     rect(5, 23, 23, 5, '#646457');
     rect(4, 19, 5, 6, '#646457');
@@ -1233,7 +1617,6 @@ function getTerrainTile(x, y) {
   return terrainCache.get(key);
 }
 
-// Character and enemy pixel art.
 const SPRITE_PALETTE = {
   o: '#12151c', s: '#53667a', m: '#8fa5b8', h: '#d9e7ed',
   b: '#315c98', B: '#183455', r: '#963d47', R: '#492431',
@@ -1267,7 +1650,6 @@ const PIXEL_SPRITES = {
     '...ottooTTo.....',
     '...ooooooo......'
   ],
-
   goblin: [
     '................',
     '................',
@@ -1290,7 +1672,6 @@ const PIXEL_SPRITES = {
     '....ooo.oooo....',
     '................'
   ],
-
   brute: [
     '......oooo......',
     '.....osmmso.....',
@@ -1313,7 +1694,6 @@ const PIXEL_SPRITES = {
     '...otTTooTTTo...',
     '...oooo.ooooo...'
   ],
-
   giant: [
     '......MMMM......',
     '.....oMHHno.....',
@@ -1336,7 +1716,6 @@ const PIXEL_SPRITES = {
     '...oNNNoNNNNo...',
     '...oooo.ooooo...'
   ],
-
   warrior: [
     '.......rr.......',
     '......orro......',
@@ -1359,7 +1738,6 @@ const PIXEL_SPRITES = {
     '...oTTooTTo.....',
     '...ooooooo......'
   ],
-
   shopkeeper: [
     '.......vv.......',
     '......ovvo......',
@@ -1500,7 +1878,6 @@ function drawSign(worldX, worldY, text, camera, danger = false) {
 }
 
 function draw(now) {
-  // Outside the finite world is dark, rather than transparent.
   ctx.fillStyle = '#101713';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
@@ -1527,7 +1904,6 @@ function draw(now) {
     Math.ceil((camera.y + canvas.height) / TILE_PX) + 1
   );
 
-  // Terrain includes negative Y coordinates.
   for (let y = minY; y <= maxY; y++) {
     for (let x = minX; x <= maxX; x++) {
       ctx.drawImage(
@@ -1538,7 +1914,6 @@ function draw(now) {
     }
   }
 
-  // Animated campfire.
   if (18 >= minX && 18 <= maxX && -33 >= minY && -33 <= maxY) {
     const x = Math.round(18 * TILE_PX - camera.x);
     const y = Math.round(-33 * TILE_PX - camera.y);
@@ -1555,7 +1930,6 @@ function draw(now) {
   drawSign(25, 0, 'NORTH: LVL 10+', camera, true);
   drawSign(35, 11, "BOB'S SHOP", camera);
 
-  // Regional landmarks.
   if (-20 >= minY && -20 <= maxY) {
     drawLabel(
       'BRUTE CLEARING',
@@ -1594,7 +1968,6 @@ function draw(now) {
     ctx.fillText(item.icon, x + 8, y + 22);
   });
 
-  // Draw lower characters last for consistent overlap.
   const actors = [
     ...state.npcs.filter(npc => npc.alive).map(npc => ({
       entity: npc,
