@@ -540,4 +540,363 @@ wss.on('connection', (ws, req) => {
           index >= p.inventory.length
         ) return;
 
-        const item = p.inventory
+        const item = p.inventory[index];
+
+        if (item && item.id !== 'coins') {
+          const gold = item.sellPrice * (item.count || 1);
+
+          p.inventory[index] = null;
+          addItemToInventory(p, 'coins', gold);
+
+          rememberPlayer(p);
+          saveAccountsToDisk();
+        }
+      } else if (data.type === 'BUY_ITEM') {
+        const item = SHOP_STOCK.find(
+          stock => stock.id === data.itemId
+        );
+
+        if (!item) return;
+
+        const coins = p.inventory.find(
+          slot => slot && slot.id === 'coins'
+        );
+
+        if (
+          coins &&
+          coins.count >= item.buyPrice &&
+          addItemToInventory(p, item.id, 1)
+        ) {
+          coins.count -= item.buyPrice;
+
+          if (coins.count <= 0) {
+            const index = p.inventory.indexOf(coins);
+            if (index !== -1) p.inventory[index] = null;
+          }
+
+          rememberPlayer(p);
+          saveAccountsToDisk();
+        }
+      } else if (data.type === 'CHAT') {
+        if (typeof data.text === 'string' && data.text.trim()) {
+          broadcast({
+            type: 'CHAT_MSG',
+            sender: p.name,
+            text: data.text.trim().substring(0, 250)
+          });
+        }
+      }
+    } catch (err) {
+      // Ignore malformed messages.
+    }
+  });
+
+  ws.on('close', () => {
+    if (players[playerId]) {
+      rememberPlayer(players[playerId]);
+      saveAccountsToDisk();
+    }
+
+    respawnProtectionUntil.delete(playerId);
+    delete players[playerId];
+
+    broadcast({
+      type: 'PLAYER_LEFT',
+      id: playerId
+    });
+  });
+});
+
+// Move an entity toward its destination.
+// Exact comparisons allow it to finish moving to the target.
+function moveEntity(entity, speed) {
+  if (
+    entity.x === entity.targetX &&
+    entity.y === entity.targetY
+  ) return;
+
+  const dx = entity.targetX - entity.x;
+  const dy = entity.targetY - entity.y;
+
+  const nextX =
+    entity.x + Math.sign(dx) * Math.min(Math.abs(dx), speed);
+
+  const nextY =
+    entity.y + Math.sign(dy) * Math.min(Math.abs(dy), speed);
+
+  if (!isWallTile(nextX, nextY)) {
+    entity.x = nextX;
+    entity.y = nextY;
+  } else {
+    entity.targetX = entity.x;
+    entity.targetY = entity.y;
+  }
+}
+
+// Movement and world updates.
+setInterval(() => {
+  const speed = 0.15;
+
+  Object.values(players).forEach(player => {
+    moveEntity(player, speed);
+  });
+
+  npcs.forEach(npc => {
+    if (!npc.alive || npc.type === 'shopkeeper') return;
+
+    if (
+      npc.x !== npc.targetX ||
+      npc.y !== npc.targetY
+    ) {
+      moveEntity(npc, speed);
+      return;
+    }
+
+    if (Math.random() >= 0.02) return;
+
+    const wilderness = npc.region === 'wilderness';
+
+    // Keep each enemy close to its spawn point.
+    const minX = Math.max(5, npc.spawnX - 4);
+    const maxX = Math.min(45, npc.spawnX + 4);
+
+    const minY = Math.max(
+      wilderness ? -40 : 5,
+      npc.spawnY - 4
+    );
+
+    const maxY = Math.min(
+      wilderness ? -5 : 40,
+      npc.spawnY + 4
+    );
+
+    const x = Math.max(
+      minX,
+      Math.min(
+        maxX,
+        Math.round(npc.x) + Math.floor(Math.random() * 5) - 2
+      )
+    );
+
+    const y = Math.max(
+      minY,
+      Math.min(
+        maxY,
+        Math.round(npc.y) + Math.floor(Math.random() * 5) - 2
+      )
+    );
+
+    if (!isWallTile(x, y)) {
+      npc.targetX = x;
+      npc.targetY = y;
+    }
+  });
+
+  broadcastWorld();
+}, 50);
+
+// Player attacks and monster respawning.
+setInterval(() => {
+  let accountsChanged = false;
+
+  Object.values(players).forEach(p => {
+    p.isAttacking = false;
+
+    if (!p.action || p.action.type !== 'ATTACK') return;
+
+    const npc = npcs.find(
+      enemy => enemy.id === p.action.targetId
+    );
+
+    if (!npc || !npc.alive || npc.type !== 'monster') {
+      p.action = null;
+      return;
+    }
+
+    if (
+      Math.hypot(p.x - npc.x, p.y - npc.y) >
+      ENEMY_MELEE_RANGE
+    ) {
+      p.targetX = Math.round(npc.x);
+      p.targetY = Math.round(npc.y);
+      return;
+    }
+
+    const hit =
+      Math.floor(Math.random() * 5) +
+      Math.floor(p.stats.strength / 3);
+
+    npc.hp = Math.max(0, npc.hp - hit);
+    p.isAttacking = true;
+    p.xp += Math.max(10, hit * 4);
+
+    if (p.xp >= p.combatLvl * 50) {
+      p.combatLvl++;
+      p.statPoints += 3;
+
+      broadcast({
+        type: 'HITSPLAT',
+        text: 'LEVEL UP!',
+        x: Math.round(p.x),
+        y: Math.round(p.y),
+        color: '#ffff00'
+      });
+    }
+
+    broadcast({
+      type: 'HITSPLAT',
+      text: hit === 0 ? '0' : `-${hit}`,
+      x: Math.round(npc.x),
+      y: Math.round(npc.y),
+      color: hit === 0 ? '#888888' : '#ff3333'
+    });
+
+    if (npc.hp <= 0) {
+      npc.alive = false;
+      npc.respawnTicks = 15;
+      p.action = null;
+      p.isAttacking = false;
+
+      const drops = ['bones'];
+
+      if (Math.random() < 0.7) drops.push('coins');
+
+      if (npc.level >= 10 && Math.random() < 0.15) {
+        drops.push('rune_scimitar');
+      } else if (Math.random() < 0.3) {
+        drops.push('goblin_hide');
+      }
+
+      drops.forEach(itemId => {
+        groundItems.push({
+          id: 'item_' + Math.random().toString(36).substring(2, 9),
+          itemId,
+          name: ITEM_DB[itemId].name,
+          icon: ITEM_DB[itemId].icon,
+          count: itemId === 'coins' ? 50 : 1,
+          x: Math.round(npc.x),
+          y: Math.round(npc.y)
+        });
+      });
+
+      broadcast({
+        type: 'GROUND_UPDATE',
+        groundItems
+      });
+    }
+
+    rememberPlayer(p);
+    accountsChanged = true;
+  });
+
+  npcs.forEach(npc => {
+    if (!npc.alive && --npc.respawnTicks <= 0) {
+      npc.alive = true;
+      npc.hp = npc.maxHp;
+      npc.x = npc.spawnX;
+      npc.y = npc.spawnY;
+      npc.targetX = npc.spawnX;
+      npc.targetY = npc.spawnY;
+    }
+  });
+
+  if (accountsChanged) saveAccountsToDisk();
+}, 600);
+
+// Enemy retaliation.
+setInterval(() => {
+  const now = Date.now();
+  let accountsChanged = false;
+
+  npcs.forEach(npc => {
+    if (!npc.alive || npc.type !== 'monster') return;
+
+    const target = Object.values(players)
+      .filter(p => {
+        return (
+          p.hp > 0 &&
+          p.action &&
+          p.action.type === 'ATTACK' &&
+          p.action.targetId === npc.id &&
+          now >= (respawnProtectionUntil.get(p.id) || 0) &&
+          Math.hypot(p.x - npc.x, p.y - npc.y) <=
+            ENEMY_MELEE_RANGE
+        );
+      })
+      .sort((a, b) => {
+        return (
+          Math.hypot(a.x - npc.x, a.y - npc.y) -
+          Math.hypot(b.x - npc.x, b.y - npc.y)
+        );
+      })[0];
+
+    if (!target) return;
+
+    const maxHit = Math.max(
+      2,
+      Math.ceil(npc.level / 2) + 1
+    );
+
+    const defense = Math.max(
+      1,
+      Number(target.stats?.defense) || 1
+    );
+
+    let armorBonus = 0;
+
+    if (target.equipment?.head?.id === 'bronze_helm') {
+      armorBonus += 2;
+    }
+
+    if (target.equipment?.shield?.id === 'wooden_shield') {
+      armorBonus += 3;
+    }
+
+    const hitChance = Math.max(
+      0.35,
+      Math.min(
+        0.9,
+        0.8 +
+          npc.level * 0.01 -
+          defense * 0.015 -
+          armorBonus * 0.025
+      )
+    );
+
+    let damage = 0;
+
+    if (Math.random() < hitChance) {
+      damage = 1 + Math.floor(Math.random() * maxHit);
+    }
+
+    damage = Math.min(target.hp, damage);
+    target.hp = Math.max(0, target.hp - damage);
+
+    broadcast({
+      type: 'HITSPLAT',
+      text: damage > 0 ? `-${damage}` : 'BLOCK',
+      x: Math.round(target.x),
+      y: Math.round(target.y),
+      color: damage > 0 ? '#ff5555' : '#99bbdd'
+    });
+
+    if (target.hp <= 0) {
+      // No loss of inventory, equipment, coins, or XP.
+      respawnPlayer(target);
+    }
+
+    if (damage > 0) {
+      rememberPlayer(target);
+      accountsChanged = true;
+    }
+  });
+
+  if (accountsChanged) saveAccountsToDisk();
+
+  broadcastWorld();
+}, ENEMY_ATTACK_INTERVAL_MS);
+
+server.listen(PORT, () => {
+  console.log(`[RuneServer] Listening on port ${PORT}`);
+  console.log('[RuneServer] Northern wilderness: Y -45 through -1.');
+});
