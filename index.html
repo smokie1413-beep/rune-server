@@ -1896,272 +1896,441 @@ function getTerrainTile(x, y) {
   return terrainCache.get(key);
 }
 
-const SPRITE_PALETTE = {
-  o: '#12151c', s: '#53667a', m: '#8fa5b8', h: '#d9e7ed',
-  b: '#315c98', B: '#183455', r: '#963d47', R: '#492431',
-  k: '#bd8862', K: '#805438', g: '#568744', G: '#304d32',
-  l: '#9eb966', t: '#795437', T: '#433023', y: '#d7b45b',
-  w: '#eee5bf', d: '#343747', D: '#626879', v: '#69479a',
-  V: '#38264f', n: '#667354', N: '#414f3b', H: '#a2ad7b',
-  M: '#447139', e: '#ec775a'
+// Character art drawn 1:1 on the same pixel grid as the 64 × 64 map.
+// Each body part is shaded, then the whole figure gets a 1px outline.
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function mixRgb(rgb, target, amount) {
+  return rgb.map((v, i) => Math.round(v + (target[i] - v) * amount));
+}
+
+class SpritePainter {
+  constructor(w, h) {
+    this.w = w;
+    this.h = h;
+    this.data = new Uint8ClampedArray(w * h * 4);
+    this.layer = document.createElement('canvas');
+    this.layer.width = w;
+    this.layer.height = h;
+    this.lc = this.layer.getContext('2d', { willReadFrequently: true });
+  }
+
+  // Draw one shaded part. shapes(g) draws on a scratch layer.
+  part(color, shapes, opts = {}) {
+    const { lc, w, h } = this;
+    lc.clearRect(0, 0, w, h);
+    lc.fillStyle = color;
+    shapes(lc);
+
+    const px = lc.getImageData(0, 0, w, h).data;
+    const solid = i => px[i * 4 + 3] >= 128;
+    const base = hexToRgb(color);
+    const light = mixRgb(base, [255, 255, 255], opts.light ?? .28);
+    const dark = mixRgb(base, [0, 0, 0], opts.dark ?? .32);
+    const mid = mixRgb(base, [0, 0, 0], (opts.dark ?? .32) * .45);
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        if (!solid(i)) continue;
+
+        const up = y > 0 && solid(i - w);
+        const left = x > 0 && solid(i - 1);
+        const down = y < h - 1 && solid(i + w);
+        const right = x < w - 1 && solid(i + 1);
+        const down2 = y < h - 2 && solid(i + 2 * w);
+        const right2 = x < w - 2 && solid(i + 2);
+
+        let rgb = base;
+        if (!down || !right) rgb = dark;
+        else if (!up || !left) rgb = light;
+        else if (!down2 || !right2) rgb = mid;
+
+        const o = i * 4;
+        this.data[o] = rgb[0];
+        this.data[o + 1] = rgb[1];
+        this.data[o + 2] = rgb[2];
+        this.data[o + 3] = 255;
+      }
+    }
+  }
+
+  // Flat, unshaded detail pixels (eyes, slits, buckles).
+  px(x, y, w, h, color) {
+    const rgb = hexToRgb(color);
+    for (let yy = y; yy < y + h; yy++) {
+      for (let xx = x; xx < x + w; xx++) {
+        if (xx < 0 || yy < 0 || xx >= this.w || yy >= this.h) continue;
+        const o = (yy * this.w + xx) * 4;
+        this.data[o] = rgb[0];
+        this.data[o + 1] = rgb[1];
+        this.data[o + 2] = rgb[2];
+        this.data[o + 3] = 255;
+      }
+    }
+  }
+
+  finish(outline = '#0e1116') {
+    const { w, h, data } = this;
+    const solid = (x, y) =>
+      x >= 0 && y >= 0 && x < w && y < h && data[(y * w + x) * 4 + 3] > 0;
+    const edge = [];
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (solid(x, y)) continue;
+        if (solid(x - 1, y) || solid(x + 1, y) ||
+            solid(x, y - 1) || solid(x, y + 1)) {
+          edge.push([x, y]);
+        }
+      }
+    }
+
+    edge.forEach(([x, y]) => this.px(x, y, 1, 1, outline));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').putImageData(new ImageData(data, w, h), 0, 0);
+    return canvas;
+  }
+}
+
+// Shape helpers for the scratch layer.
+function sRect(x, y, w, h) {
+  return g => g.fillRect(x, y, w, h);
+}
+
+function sEllipse(cx, cy, rx, ry) {
+  return g => {
+    g.beginPath();
+    g.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+    g.fill();
+  };
+}
+
+function sPoly(points) {
+  return g => {
+    g.beginPath();
+    points.forEach(([x, y], i) => i ? g.lineTo(x, y) : g.moveTo(x, y));
+    g.closePath();
+    g.fill();
+  };
+}
+
+function shapes(...list) {
+  return g => list.forEach(fn => fn(g));
+}
+
+const SPRITE_ART = {
+  hero(p, variant) {
+    const tabard = variant === 'other' ? '#a03f4a' : '#3264a8';
+    const steel = '#9aaebf';
+
+    // Plume trailing behind the helmet.
+    p.part('#b0414c', shapes(sEllipse(33, 5, 3, 5), sEllipse(37, 9, 3, 4)));
+
+    // Legs and boots.
+    p.part(steel, shapes(sRect(25, 44, 6, 13), sRect(33, 44, 6, 13)));
+    p.part('#6b4a30', shapes(sRect(24, 55, 8, 7), sRect(32, 55, 8, 7)));
+
+    // Sword held upright in the right hand.
+    p.part('#dbe6ee', sPoly([[49, 9], [51, 7], [53, 9], [53, 40], [49, 40]]), { light: .1 });
+    p.part('#d7b45b', sRect(45, 40, 12, 3));
+    p.part('#5a3d27', sRect(50, 43, 3, 6));
+    p.part('#d7b45b', sRect(49, 49, 5, 3));
+
+    // Arms and torso.
+    p.part(steel, shapes(sRect(16, 28, 7, 16), sRect(42, 28, 7, 16)));
+    p.part(steel, sPoly([[21, 26], [43, 26], [42, 46], [22, 46]]));
+    p.part(tabard, sPoly([[25, 30], [39, 30], [40, 52], [24, 52]]), { light: .2 });
+    p.part('#5c3f28', sRect(23, 42, 18, 3));
+    p.px(30, 42, 4, 3, '#e3c062');
+    p.px(31, 34, 2, 6, '#e3c062');
+    p.px(29, 36, 6, 2, '#e3c062');
+
+    // Pauldrons and gauntlets.
+    p.part(steel, shapes(sEllipse(20, 28, 6, 5), sEllipse(44, 28, 6, 5)));
+    p.part('#6f8294', shapes(sRect(16, 43, 7, 4), sRect(46, 43, 7, 5)));
+
+    // Great helm with visor.
+    p.part(steel, shapes(sEllipse(32, 17, 10, 11), sRect(23, 17, 18, 9)));
+    p.px(25, 17, 14, 2, '#151a22');
+    p.px(31, 19, 2, 5, '#151a22');
+    p.px(28, 22, 1, 1, '#151a22');
+    p.px(35, 22, 1, 1, '#151a22');
+    p.px(31, 7, 2, 9, '#c7d5df');
+
+    // Kite shield in front of the left arm.
+    p.part('#8a96a3', sPoly([[8, 28], [23, 28], [23, 41], [15.5, 52], [8, 41]]));
+    p.part(tabard, sPoly([[10, 30], [21, 30], [21, 40], [15.5, 49], [10, 40]]), { light: .2 });
+    p.px(15, 32, 2, 12, '#e3c062');
+    p.px(12, 36, 8, 2, '#e3c062');
+  },
+
+  goblin(p) {
+    const skin = '#6fa04f';
+
+    p.part(skin, shapes(sRect(25, 49, 5, 9), sRect(34, 49, 5, 9)));
+    p.part('#4a3424', shapes(sRect(23, 57, 8, 5), sRect(33, 57, 8, 5)));
+
+    // Rusty dagger.
+    p.part('#a7a39a', sPoly([[47, 32], [49, 30], [51, 32], [51, 46], [47, 46]]), { light: .15 });
+    p.part('#5a3d27', sRect(46, 46, 6, 3));
+
+    p.part(skin, shapes(sRect(17, 37, 5, 12), sRect(43, 37, 5, 12)));
+    p.part('#7a5536', sEllipse(32, 45, 12, 10));
+    p.part('#5c3f28', sPoly([[22, 50], [42, 50], [40, 56], [24, 56]]));
+    p.part('#3a2a1c', sRect(21, 46, 22, 3));
+    p.px(30, 46, 4, 3, '#b9a162');
+
+    // Big head and pointed ears.
+    p.part(skin, sPoly([[22, 27], [5, 19], [11, 27], [21, 34]]));
+    p.part(skin, sPoly([[42, 27], [59, 19], [53, 27], [43, 34]]));
+    p.part(skin, sEllipse(32, 29, 12, 10));
+    p.px(25, 27, 5, 3, '#f2d35a');
+    p.px(34, 27, 5, 3, '#f2d35a');
+    p.px(27, 28, 2, 2, '#1a1208');
+    p.px(36, 28, 2, 2, '#1a1208');
+    p.px(24, 25, 6, 1, '#3f6630');
+    p.px(34, 25, 6, 1, '#3f6630');
+    p.px(31, 30, 2, 2, '#4b7a3a');
+    p.px(26, 34, 12, 2, '#2a1a12');
+    p.px(27, 34, 2, 2, '#eee5bf');
+    p.px(35, 34, 2, 2, '#eee5bf');
+  },
+
+  brute(p) {
+    const skin = '#5e8f45';
+
+    p.part(skin, shapes(sRect(22, 45, 8, 12), sRect(34, 45, 8, 12)));
+    p.part('#3f2c1e', shapes(sRect(20, 56, 11, 6), sRect(33, 56, 11, 6)));
+
+    // Spiked club.
+    p.part('#6e4b2f', sPoly([[49, 8], [57, 8], [55, 40], [51, 40]]));
+    p.px(48, 12, 2, 2, '#c8ccd0');
+    p.px(56, 16, 2, 2, '#c8ccd0');
+    p.px(48, 22, 2, 2, '#c8ccd0');
+    p.px(56, 28, 2, 2, '#c8ccd0');
+
+    p.part(skin, shapes(sRect(9, 27, 9, 19), sRect(46, 27, 9, 19)));
+    p.part('#6d4c33', sPoly([[16, 24], [48, 24], [45, 50], [19, 50]]));
+    p.part('#8a96a3', sRect(18, 32, 28, 8));
+    p.part('#3a2a1c', sRect(18, 44, 28, 4));
+    p.px(29, 44, 6, 4, '#c9a85a');
+    p.part('#8a96a3', shapes(sEllipse(15, 26, 8, 6), sEllipse(49, 26, 8, 6)));
+    p.px(14, 19, 2, 3, '#c8ccd0');
+    p.px(48, 19, 2, 3, '#c8ccd0');
+    p.part(skin, shapes(sRect(8, 45, 10, 7), sRect(46, 40, 10, 7)));
+
+    // Head with iron cap.
+    p.part(skin, sPoly([[22, 14], [10, 9], [16, 16], [22, 20]]));
+    p.part(skin, sPoly([[42, 14], [54, 9], [48, 16], [42, 20]]));
+    p.part(skin, sEllipse(32, 16, 11, 10));
+    p.part('#7b8692', shapes(sEllipse(32, 9, 11, 6), sRect(21, 9, 22, 3)));
+    p.px(26, 15, 4, 2, '#f2a33a');
+    p.px(34, 15, 4, 2, '#f2a33a');
+    p.px(27, 15, 2, 2, '#200d06');
+    p.px(35, 15, 2, 2, '#200d06');
+    p.px(26, 21, 12, 2, '#25160e');
+    p.px(27, 19, 2, 3, '#eee5bf');
+    p.px(35, 19, 2, 3, '#eee5bf');
+  },
+
+  warrior(p) {
+    const plate = '#4c5160';
+
+    // Tattered red cape behind the body.
+    p.part('#7b1f2a', sPoly([[19, 26], [45, 26], [49, 58], [42, 55], [36, 59], [30, 55], [23, 59], [15, 56]]));
+
+    p.part(plate, shapes(sRect(25, 44, 6, 13), sRect(33, 44, 6, 13)));
+    p.part('#24262e', shapes(sRect(24, 55, 8, 7), sRect(32, 55, 8, 7)));
+
+    // Dark greatsword.
+    p.part('#6c7384', sPoly([[49, 4], [52, 1], [55, 4], [55, 40], [49, 40]]), { light: .2 });
+    p.px(52, 6, 1, 32, '#c9474f');
+    p.part('#7a2a33', sRect(45, 40, 14, 3));
+    p.part('#2a1d16', sRect(50, 43, 4, 7));
+
+    p.part(plate, shapes(sRect(16, 28, 7, 16), sRect(42, 28, 7, 16)));
+    p.part(plate, sPoly([[21, 26], [43, 26], [42, 47], [22, 47]]));
+    p.part('#2f323d', sPoly([[25, 31], [39, 31], [37, 46], [27, 46]]));
+    p.part('#5a1c25', sRect(23, 43, 18, 3));
+    p.px(30, 43, 4, 3, '#c9474f');
+
+    // Spiked pauldrons.
+    p.part(plate, shapes(sEllipse(20, 28, 7, 5), sEllipse(44, 28, 7, 5)));
+    p.part('#8a8f9c', shapes(
+      sPoly([[14, 26], [10, 19], [18, 24]]),
+      sPoly([[50, 26], [54, 19], [46, 24]])
+    ), { light: .2 });
+    p.part('#30333d', shapes(sRect(16, 43, 7, 4), sRect(46, 43, 7, 5)));
+
+    // Horned helm with glowing eyes.
+    p.part('#b9ad8e', shapes(
+      sPoly([[23, 13], [14, 3], [19, 12], [22, 17]]),
+      sPoly([[41, 13], [50, 3], [45, 12], [42, 17]])
+    ));
+    p.part(plate, shapes(sEllipse(32, 17, 10, 11), sRect(23, 17, 18, 9)));
+    p.px(25, 18, 14, 3, '#0b0c10');
+    p.px(27, 19, 3, 1, '#ff5a3c');
+    p.px(34, 19, 3, 1, '#ff5a3c');
+    p.px(31, 21, 2, 4, '#0b0c10');
+  },
+
+  shopkeeper(p) {
+    const robe = '#6c4a9e';
+    const skinTone = '#d6a27a';
+
+    p.part('#3e2a1c', shapes(sRect(24, 57, 8, 5), sRect(33, 57, 8, 5)));
+
+    // Long robe and sleeves.
+    p.part(robe, sPoly([[22, 30], [42, 30], [47, 59], [17, 59]]));
+    p.part(robe, shapes(
+      sPoly([[22, 30], [13, 46], [20, 48], [25, 36]]),
+      sPoly([[42, 30], [51, 46], [44, 48], [39, 36]])
+    ));
+    p.part('#8a6a46', sPoly([[26, 38], [38, 38], [40, 57], [24, 57]]), { light: .2 });
+    p.px(31, 44, 3, 3, '#b49058');
+    p.part('#d7b45b', sRect(22, 36, 20, 3));
+    p.part(skinTone, shapes(sEllipse(16, 48, 4, 3), sEllipse(48, 48, 4, 3)));
+
+    // Coin pouch.
+    p.part('#9b7a3e', sEllipse(44, 41, 4, 4));
+    p.px(43, 37, 3, 1, '#4a3420');
+
+    // Face, beard, and pointed hat.
+    p.part(skinTone, sEllipse(32, 23, 8, 8));
+    p.px(28, 22, 2, 2, '#2b1d14');
+    p.px(34, 22, 2, 2, '#2b1d14');
+    p.px(31, 24, 2, 2, '#b98262');
+    p.part('#e9e3d4', sPoly([[25, 25], [39, 25], [36, 37], [32, 41], [28, 37]]), { light: .1, dark: .2 });
+    p.px(29, 28, 6, 1, '#b8ae9a');
+    p.part('#4e3478', sEllipse(32, 15, 15, 3));
+    p.part(robe, sPoly([[22, 15], [42, 15], [36, 6], [39, 0], [30, 4]]));
+    p.px(24, 12, 16, 2, '#d7b45b');
+    p.px(33, 8, 2, 2, '#f2e08a');
+  },
+
+  giant(p) {
+    const rock = '#6f7d5c';
+    const moss = '#4b7a3a';
+
+    // Thick legs and feet.
+    p.part(rock, shapes(sRect(30, 78, 14, 24), sRect(52, 78, 14, 24)));
+    p.part('#4a5440', shapes(sEllipse(37, 104, 10, 5), sEllipse(59, 104, 10, 5)));
+
+    // Tree-trunk club resting at its side.
+    p.part('#6b4a2f', sPoly([[80, 30], [90, 28], [88, 86], [82, 86]]));
+    p.part(moss, shapes(sEllipse(85, 32, 7, 5), sEllipse(83, 48, 3, 3)));
+
+    // Long arms and huge fists.
+    p.part(rock, shapes(
+      sPoly([[22, 40], [12, 50], [10, 78], [20, 78], [26, 56]]),
+      sPoly([[74, 40], [84, 50], [86, 74], [76, 74], [70, 56]])
+    ));
+    p.part('#5d6a4c', shapes(sEllipse(15, 82, 8, 7), sEllipse(81, 76, 8, 7)));
+
+    // Massive torso.
+    p.part(rock, sEllipse(48, 60, 27, 24));
+    p.part('#5a6849', sEllipse(48, 66, 17, 13));
+    p.px(30, 50, 1, 7, '#46523a');
+    p.px(66, 58, 1, 6, '#46523a');
+    p.part('#6b4a2f', sRect(25, 78, 46, 5));
+
+    // Moss growing on shoulders and back.
+    p.part(moss, shapes(
+      sEllipse(26, 40, 10, 6),
+      sEllipse(70, 40, 10, 6),
+      sEllipse(48, 38, 14, 5),
+      sEllipse(32, 62, 4, 3),
+      sEllipse(62, 70, 5, 3)
+    ), { light: .3 });
+
+    // Small head with glowing eyes and moss crown.
+    p.part(rock, sEllipse(48, 26, 13, 13));
+    p.part(moss, shapes(sEllipse(48, 15, 13, 6), sEllipse(39, 18, 4, 4)), { light: .3 });
+    p.px(41, 25, 5, 3, '#f2d35a');
+    p.px(51, 25, 5, 3, '#f2d35a');
+    p.px(43, 26, 2, 2, '#3a2a08');
+    p.px(53, 26, 2, 2, '#3a2a08');
+    p.px(40, 23, 7, 1, '#3e4a33');
+    p.px(50, 23, 7, 1, '#3e4a33');
+    p.px(43, 33, 11, 2, '#2c3324');
+    p.px(44, 32, 2, 2, '#d8d2b0');
+    p.px(51, 32, 2, 2, '#d8d2b0');
+
+    // Light moss flecks.
+    [[30, 52], [64, 56], [50, 46], [22, 60], [78, 60], [45, 86], [60, 90]]
+      .forEach(([x, y]) => p.px(x, y, 2, 1, '#7fae5c'));
+  }
 };
 
-const PIXEL_SPRITES = {
-  hero: [
-    '.......rr.......',
-    '......orro......',
-    '.....osmmso.....',
-    '.....omhmmo.....',
-    '.....omhhmo.....',
-    '.....osoomo.....',
-    '.....ohhmmo.....',
-    '...ooosmmsooo...',
-    '..ohhmosmohmmo..',
-    '..ommsmmmommsso.',
-    '..osmbhhmbmsoho.',
-    '..okobmmmbokoho.',
-    '..oKobsssbokoho.',
-    '..ooobyybboooho.',
-    '...oBbbbbBo.oyo.',
-    '...oBsmmBBo.oto.',
-    '....osoomso.oto.',
-    '....omoomso..o..',
-    '...ottooTTo.....',
-    '...ooooooo......'
-  ],
-  goblin: [
-    '................',
-    '................',
-    '.....oooooo.....',
-    '..ooogllgggooo..',
-    '...ogllllgggo...',
-    '....oggggggo....',
-    '....oygooygo....',
-    '....ogglgggo....',
-    '.....owwwwgo....',
-    '....oottttoo....',
-    '...ogotttTogoo..',
-    '...olotttToggo..',
-    '...ogotTTToggo..',
-    '...oooyyTTTooo..',
-    '.....otttTo.oto.',
-    '.....ogoggo.oto.',
-    '.....ogoggo.oto.',
-    '....ottotTTo.o..',
-    '....ooo.oooo....',
-    '................'
-  ],
-  brute: [
-    '......oooo......',
-    '.....osmmso.....',
-    '..oooggggggooo..',
-    '...ogllgggggo...',
-    '....oggggggo....',
-    '....oygooygo....',
-    '....ogglgggo....',
-    '.....owwwwo.....',
-    '..ooootttToooo..',
-    '.oshhosssohhsso.',
-    '.osmsommmommsso.',
-    '.oggoommmootggo.',
-    '.oggotsssTotggo.',
-    '.oggotyyyTotggo.',
-    '..ooootttToooo..',
-    '....oTtttTo.oto.',
-    '....oggooggooto.',
-    '....oggooggooto.',
-    '...otTTooTTTo...',
-    '...oooo.ooooo...'
-  ],
-  giant: [
-    '......MMMM......',
-    '.....oMHHno.....',
-    '....oHHHnnno....',
-    '....oHnnnnno....',
-    '....oNyNNyNo....',
-    '....oNnnnnNo....',
-    '.....oNNNNo.....',
-    '..oooMnnnnMooo..',
-    '.oHHMMnnnnMMnNo.',
-    '.oHnnnHnnnnnnNo.',
-    '.oHnnoHnnnonnNo.',
-    '.oNnnoNNnNonnNo.',
-    '.oNnnoNnnNonnNo.',
-    '..oooNNMMNNooo..',
-    '....oNNNNNNo....',
-    '....oNNoNNNo....',
-    '....oNNoNNNo....',
-    '....oHNoNHNo....',
-    '...oNNNoNNNNo...',
-    '...oooo.ooooo...'
-  ],
-  warrior: [
-    '.......rr.......',
-    '......orro......',
-    '.....odDDdo.....',
-    '.....oDDddo.....',
-    '.....odDDdo.....',
-    '.....oeooeo.....',
-    '.....odDDdo.....',
-    '...oooddddooo...',
-    '..oDDdoddodDdo..',
-    '..oDdddddddDddo.',
-    '..oddRDDRdddoho.',
-    '..oKoRddRdoKoho.',
-    '..oKoRddRdoKoho.',
-    '..oooRyyRdoooho.',
-    '...oRRrrRRo.oyo.',
-    '...oRdDdRRo.oto.',
-    '....odooddo.oto.',
-    '....oDooddo..o..',
-    '...oTTooTTo.....',
-    '...ooooooo......'
-  ],
-  shopkeeper: [
-    '.......vv.......',
-    '......ovvo......',
-    '.....ovvvvo.....',
-    '....ovvvvvvo....',
-    '...ooVVVVVVoo...',
-    '.....okkkko.....',
-    '.....okooko.....',
-    '.....okKKko.....',
-    '......owwo......',
-    '....oovvVoo.....',
-    '...ovvvvVVVo....',
-    '...ovvyyVVVo....',
-    '...okvttVko.....',
-    '...oKvttVKo.....',
-    '....ovttVVo.....',
-    '....ovttVVo.....',
-    '....oVttVVo.....',
-    '....oVooVVo.....',
-    '...ottooTTo.....',
-    '...ooooooo......'
-  ]
+const SPRITE_SIZES = {
+  hero: [64, 64],
+  goblin: [64, 64],
+  brute: [64, 64],
+  warrior: [64, 64],
+  shopkeeper: [64, 64],
+  giant: [96, 110]
 };
 
 const spriteCache = new Map();
 
-// Scale2x smooths pixel art while doubling its resolution,
-// giving the 16 × 20 sprites finer 64 × 80 detail.
-function scale2x(rows) {
-  const h = rows.length;
-  const w = rows[0].length;
-  const at = (x, y) =>
-    x < 0 || y < 0 || x >= w || y >= h ? '.' : rows[y][x];
-
-  const out = [];
-
-  for (let y = 0; y < h; y++) {
-    let top = '';
-    let bottom = '';
-
-    for (let x = 0; x < w; x++) {
-      const E = at(x, y);
-      const B = at(x, y - 1);
-      const D = at(x - 1, y);
-      const F = at(x + 1, y);
-      const H = at(x, y + 1);
-
-      if (B !== H && D !== F) {
-        top += (D === B ? D : E) + (B === F ? F : E);
-        bottom += (D === H ? D : E) + (H === F ? F : E);
-      } else {
-        top += E + E;
-        bottom += E + E;
-      }
-    }
-
-    out.push(top, bottom);
-  }
-
-  return out;
-}
-
-function getSpriteImage(name, variant = '', passes = 2) {
-  const key = name + ':' + variant + ':' + passes;
+function getSpriteImage(name, variant = '') {
+  const key = name + ':' + variant;
   if (spriteCache.has(key)) return spriteCache.get(key);
 
-  let rows = PIXEL_SPRITES[name];
-  for (let i = 0; i < passes; i++) rows = scale2x(rows);
+  const [w, h] = SPRITE_SIZES[name];
+  const painter = new SpritePainter(w, h);
+  SPRITE_ART[name](painter, variant);
 
-  const image = document.createElement('canvas');
-  image.width = rows[0].length;
-  image.height = rows.length;
-
-  const paint = image.getContext('2d');
-  const palette = { ...SPRITE_PALETTE };
-
-  if (variant === 'other') {
-    palette.b = '#963d47';
-    palette.B = '#492431';
-  }
-
-  rows.forEach((row, y) => {
-    for (let x = 0; x < row.length; x++) {
-      const color = palette[row[x]];
-      if (!color) continue;
-
-      paint.fillStyle = color;
-      paint.fillRect(x, y, 1, 1);
-    }
-  });
-
+  const image = painter.finish();
   spriteCache.set(key, image);
   return image;
 }
 
-// World scale relative to the original 32-pixel tiles.
-const S = TILE_PX / 32;
-
+// Sprites are drawn 1:1 so their pixels match the 64 × 64 map grid.
 function drawSprite(x, y, name, big = false, variant = '') {
-  // Normal sprites: 64 × 80. Giants: 96 × 120.
-  const image = big
-    ? getSpriteImage(name, variant, 1)
-    : getSpriteImage(name, variant, 2);
-
-  const drawScale = big ? 3 : 1;
-  const width = image.width * drawScale;
-  const height = image.height * drawScale;
+  const image = getSpriteImage(name, variant);
   const cx = x + TILE_PX / 2;
-  const feet = y + TILE_PX - 4;
+  const feet = y + TILE_PX - 2;
 
   ctx.fillStyle = 'rgba(0,0,0,.32)';
   ctx.beginPath();
-  ctx.ellipse(cx, feet - 2, big ? 34 : 22, big ? 8 : 6, 0, 0, Math.PI * 2);
+  ctx.ellipse(cx, feet - 2, big ? 34 : 20, big ? 8 : 5, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.drawImage(
-    image,
-    Math.round(cx - width / 2),
-    Math.round(feet - height),
-    width,
-    height
-  );
+  const left = Math.round(cx - image.width / 2);
+  const top = Math.round(feet - image.height);
 
-  return feet - height;
+  ctx.drawImage(image, left, top);
+  return top;
 }
 
+// Sword-swing arc shown while a player is attacking.
 function drawAttackSword(x, y) {
+  const t = (performance.now() % 600) / 600;
+  const cx = x + 40;
+  const cy = y + 26;
+  const start = -1.9 + t * 1.6;
+
   ctx.save();
-  ctx.translate(Math.round(x + 54), Math.round(y + 22));
-
-  ctx.fillStyle = '#12151c';
-  ctx.fillRect(0, -4, 40, 11);
-  ctx.fillStyle = '#8fa5b8';
-  ctx.fillRect(4, -2, 34, 7);
-  ctx.fillStyle = '#e5edf3';
-  ctx.fillRect(4, -2, 34, 2);
-  ctx.fillStyle = '#5d7184';
-  ctx.fillRect(4, 3, 34, 2);
-  ctx.fillStyle = '#e5edf3';
-  ctx.fillRect(38, -1, 2, 5);
-  ctx.fillStyle = '#d7b45b';
-  ctx.fillRect(0, -8, 5, 19);
-  ctx.fillStyle = '#f2d98a';
-  ctx.fillRect(1, -7, 2, 17);
-
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(235, 245, 255, .75)';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 24, start, start + 1.1);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255, 255, 255, .35)';
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(cx, cy, 20, start + .1, start + .9);
+  ctx.stroke();
   ctx.restore();
 }
 
