@@ -370,6 +370,88 @@ function rememberPlayer(player) {
   }
 }
 
+function getPlayerSocket(playerId) {
+  for (const client of wss.clients) {
+    if (
+      client.readyState === 1 &&
+      client.authenticated &&
+      client.playerId === playerId
+    ) {
+      return client;
+    }
+  }
+  return null;
+}
+
+function sendQuestUpdate(ws, player) {
+  if (!ws || ws.readyState !== 1 || !player?.quest) return;
+  ws.send(JSON.stringify({
+    type: 'QUEST_UPDATE',
+    quest: player.quest
+  }));
+}
+
+function advanceStarterChop(player, ws) {
+  const q = player.quest;
+  if (!q || q.done || q.stage !== 'chop') return;
+
+  q.progress = Math.min(q.goal, (q.progress || 0) + 1);
+  if (q.progress >= q.goal) {
+    q.stage = 'deliver';
+    q.progress = q.goal;
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: 'Quest updated: Return to Shopkeeper Bob for your reward.'
+      }));
+    }
+  }
+  sendQuestUpdate(ws, player);
+}
+
+function tryCompleteStarterQuest(player, ws) {
+  const q = player.quest;
+  if (!q || q.done) {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: q?.done
+          ? "Bob: Thanks again. Come back when you need supplies."
+          : "Bob: Welcome to my shop."
+      }));
+    }
+    return false;
+  }
+
+  if (q.stage === 'chop') {
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: `Bob: Chop ${q.goal} trees for me first. Progress: ${q.progress}/${q.goal}.`
+      }));
+    }
+    return false;
+  }
+
+  if (q.stage === 'deliver') {
+    q.done = true;
+    q.stage = 'done';
+    addItemToInventory(player, 'coins', 50);
+    addItemToInventory(player, 'bread', 2);
+    rememberPlayer(player);
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: "Bob: Fine work. Here's 50 coins and some bread."
+      }));
+      sendQuestUpdate(ws, player);
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function addItemToInventory(player, itemId, count = 1) {
   const info = ITEM_DB[itemId];
 
@@ -730,6 +812,16 @@ wss.on('connection', (ws, req) => {
     if (!playerData.stats) playerData.stats = {};
     if (playerData.stats.woodcutting == null) playerData.stats.woodcutting = 1;
     if (playerData.woodcuttingXp == null) playerData.woodcuttingXp = 0;
+    if (!playerData.quest) {
+      playerData.quest = {
+        id: 'starter',
+        title: "Bob's first job",
+        stage: 'chop',
+        progress: 0,
+        goal: 5,
+        done: false
+      };
+    }
   } else {
     const inventory = Array(28).fill(null);
 
@@ -760,6 +852,14 @@ wss.on('connection', (ws, req) => {
         woodcutting: 1
       },
       woodcuttingXp: 0,
+      quest: {
+        id: 'starter',
+        title: "Bob's first job",
+        stage: 'chop',
+        progress: 0,
+        goal: 5,
+        done: false
+      },
       equipment: {
         head: null,
         weapon: null,
@@ -772,6 +872,7 @@ wss.on('connection', (ws, req) => {
   }
 
   players[playerId] = playerData;
+  ws.playerId = playerId;
   rememberPlayer(playerData);
   saveAccountsToDisk();
 
@@ -785,6 +886,17 @@ wss.on('connection', (ws, req) => {
     shopStock: SHOP_STOCK,
     world: WORLD
   }, publicFields));
+
+  sendQuestUpdate(ws, playerData);
+
+  if (!playerData.quest.done) {
+    ws.send(JSON.stringify({
+      type: 'SERVER_MSG',
+      text: playerData.quest.stage === 'chop'
+        ? "Quest: Chop 5 trees, then talk to Shopkeeper Bob."
+        : "Quest: Talk to Shopkeeper Bob to finish your job."
+    }));
+  }
 
   if (positionReset) {
     ws.send(JSON.stringify({
@@ -1002,6 +1114,19 @@ wss.on('connection', (ws, req) => {
             sender: p.name,
             text: data.text.trim().substring(0, 250)
           });
+        }
+      } else if (data.type === 'TALK_NPC') {
+        const npc = npcs.find(n => n.id === data.targetId);
+        if (
+          npc &&
+          npc.alive &&
+          npc.type === 'shopkeeper' &&
+          Math.hypot(p.x - npc.x, p.y - npc.y) < 4
+        ) {
+          tryCompleteStarterQuest(p, ws);
+          rememberPlayer(p);
+          saveAccountsToDisk();
+          broadcastWorld();
         }
       }
     } catch (err) {
@@ -1344,6 +1469,7 @@ setInterval(() => {
       p.action = null;
       p.isAttacking = false;
 
+      advanceStarterChop(p, getPlayerSocket(p.id));
       rememberPlayer(p);
       accountsChanged = true;
     }
