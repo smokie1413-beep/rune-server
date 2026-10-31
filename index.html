@@ -1137,7 +1137,23 @@ const ITEM_DESCRIPTIONS = {
   },
   logs: {
     type: 'Resource',
-    description: 'Logs cut from trees. Sell them to Bob or use them later for firemaking/fletching.'
+    description: 'Normal logs. Sell to Bob or use later for firemaking/fletching.'
+  },
+  oak_logs: {
+    type: 'Resource',
+    description: 'Oak logs. Higher value. Requires Woodcutting 15 to cut.'
+  },
+  willow_logs: {
+    type: 'Resource',
+    description: 'Willow logs. Valuable. Requires Woodcutting 30 to cut.'
+  },
+  bronze_axe: {
+    type: 'Tool',
+    description: 'A basic axe. Equip it or keep it in inventory to chop trees.'
+  },
+  iron_axe: {
+    type: 'Tool',
+    description: 'A stronger axe. Chops trees faster than a bronze axe.'
   },
   fire_rune: {
     type: 'Magic supply',
@@ -2640,40 +2656,65 @@ function draw(now) {
     ctx.restore();
   });
 
-  // Trees (woodcutting)
+  // Trees (woodcutting) – different look per type
   (state.trees || []).forEach(tree => {
     if (!tree.alive) return;
     const x = tree.x * TILE_PX - camera.x;
     const y = tree.y * TILE_PX - camera.y;
 
     if (
-      x < -100 || x > canvas.width + 100 ||
-      y < -100 || y > canvas.height + 100
+      x < -120 || x > canvas.width + 120 ||
+      y < -120 || y > canvas.height + 120
     ) return;
 
-    // Simple tree: trunk + canopy
+    const isOak = tree.type === 'oak';
+    const isWillow = tree.type === 'willow';
+
+    // Shadow
     ctx.fillStyle = 'rgba(0,0,0,.25)';
     ctx.beginPath();
-    ctx.ellipse(x + 32, y + 58, 18, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(x + 32, y + 58, isWillow ? 22 : 18, 5, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    ctx.fillStyle = '#5c3a1e';
-    ctx.fillRect(x + 26, y + 28, 12, 30);
+    // Trunk
+    ctx.fillStyle = isOak ? '#4a3018' : isWillow ? '#3d2a14' : '#5c3a1e';
+    const trunkW = isWillow ? 14 : 12;
+    ctx.fillRect(x + 32 - trunkW/2, y + 26, trunkW, isWillow ? 34 : 30);
 
-    ctx.fillStyle = '#2d6b2d';
+    // Canopy colours
+    const dark = isOak ? '#2a5a22' : isWillow ? '#1e4a3a' : '#2d6b2d';
+    const mid  = isOak ? '#3a7a32' : isWillow ? '#2d6b4a' : '#3a8a3a';
+    const light= isOak ? '#4a9a42' : isWillow ? '#3a8a5a' : '#4aaa4a';
+
+    const size = isWillow ? 26 : isOak ? 24 : 22;
+
+    ctx.fillStyle = dark;
     ctx.beginPath();
-    ctx.arc(x + 32, y + 22, 22, 0, Math.PI * 2);
+    ctx.arc(x + 32, y + 20, size, 0, Math.PI * 2);
     ctx.fill();
-    ctx.fillStyle = '#3a8a3a';
+
+    ctx.fillStyle = mid;
     ctx.beginPath();
-    ctx.arc(x + 24, y + 16, 14, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x + 40, y + 16, 14, 0, Math.PI * 2);
+    ctx.arc(x + 22, y + 14, size * 0.65, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x + 32, y + 8, 12, 0, Math.PI * 2);
+    ctx.arc(x + 42, y + 14, size * 0.65, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.fillStyle = light;
+    ctx.beginPath();
+    ctx.arc(x + 32, y + 6, size * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Small level indicator for higher trees
+    if (isOak || isWillow) {
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(x + 18, y - 6, 28, 12);
+      ctx.fillStyle = isWillow ? '#7dcea0' : '#a8d88a';
+      ctx.font = 'bold 9px Trebuchet MS';
+      ctx.textAlign = 'center';
+      ctx.fillText(isWillow ? 'W30' : 'O15', x + 32, y + 3);
+    }
   });
 
   const actors = [
