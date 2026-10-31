@@ -278,24 +278,66 @@ function makeTree(id, x, y, type) {
 }
 
 const trees = [
-  // Normal trees around town
-  makeTree(1, 12, 18, 'normal'),
-  makeTree(2, 14, 26, 'normal'),
-  makeTree(3, 28, 18, 'normal'),
-  makeTree(4, 35, 25, 'normal'),
-  makeTree(5, 8, 30, 'normal'),
-  makeTree(6, 40, 10, 'normal'),
-  makeTree(7, 10, 12, 'normal'),
-  makeTree(8, 42, 30, 'normal'),
-  // Oaks a bit further out
-  makeTree(9, 5, 35, 'oak'),
-  makeTree(10, 48, 28, 'oak'),
-  makeTree(11, 15, 40, 'oak'),
-  makeTree(12, 50, 15, 'oak'),
-  // Willows further north / edges
-  makeTree(13, 3, 42, 'willow'),
-  makeTree(14, 55, 35, 'willow'),
-  makeTree(15, 20, 45, 'willow')
+  // === Normal trees (lvl 1) – common around town & grasslands ===
+  makeTree(1, 8, 12, 'normal'),
+  makeTree(2, 10, 18, 'normal'),
+  makeTree(3, 14, 22, 'normal'),
+  makeTree(4, 16, 28, 'normal'),
+  makeTree(5, 20, 14, 'normal'),
+  makeTree(6, 24, 10, 'normal'),
+  makeTree(7, 28, 16, 'normal'),
+  makeTree(8, 30, 24, 'normal'),
+  makeTree(9, 34, 20, 'normal'),
+  makeTree(10, 38, 12, 'normal'),
+  makeTree(11, 42, 18, 'normal'),
+  makeTree(12, 46, 26, 'normal'),
+  makeTree(13, 6, 30, 'normal'),
+  makeTree(14, 12, 34, 'normal'),
+  makeTree(15, 18, 32, 'normal'),
+  makeTree(16, 26, 36, 'normal'),
+  makeTree(17, 32, 30, 'normal'),
+  makeTree(18, 40, 34, 'normal'),
+  makeTree(19, 48, 22, 'normal'),
+  makeTree(20, 52, 28, 'normal'),
+  makeTree(21, 4, 20, 'normal'),
+  makeTree(22, 50, 10, 'normal'),
+  makeTree(23, 22, 8, 'normal'),
+  makeTree(24, 36, 8, 'normal'),
+
+  // === Oak trees (lvl 15) – scattered mid-distance ===
+  makeTree(25, 5, 38, 'oak'),
+  makeTree(26, 12, 42, 'oak'),
+  makeTree(27, 18, 40, 'oak'),
+  makeTree(28, 28, 44, 'oak'),
+  makeTree(29, 38, 40, 'oak'),
+  makeTree(30, 46, 36, 'oak'),
+  makeTree(31, 54, 30, 'oak'),
+  makeTree(32, 58, 20, 'oak'),
+  makeTree(33, 2, 28, 'oak'),
+  makeTree(34, 55, 12, 'oak'),
+  makeTree(35, 8, 8, 'oak'),
+  makeTree(36, 44, 6, 'oak'),
+  makeTree(37, 60, 32, 'oak'),
+  makeTree(38, 15, 48, 'oak'),
+  makeTree(39, 32, 50, 'oak'),
+  makeTree(40, 50, 45, 'oak'),
+
+  // === Willow trees (lvl 30) – edges & further out ===
+  makeTree(41, 3, 45, 'willow'),
+  makeTree(42, 10, 50, 'willow'),
+  makeTree(43, 22, 52, 'willow'),
+  makeTree(44, 35, 55, 'willow'),
+  makeTree(45, 48, 50, 'willow'),
+  makeTree(46, 58, 42, 'willow'),
+  makeTree(47, 62, 28, 'willow'),
+  makeTree(48, 65, 15, 'willow'),
+  makeTree(49, 1, 35, 'willow'),
+  makeTree(50, 70, 35, 'willow'),
+  makeTree(51, 5, 55, 'willow'),
+  makeTree(52, 40, 60, 'willow'),
+  makeTree(53, 55, 55, 'willow'),
+  makeTree(54, 68, 45, 'willow'),
+  makeTree(55, 25, 58, 'willow')
 ];
 
 function broadcast(data) {
