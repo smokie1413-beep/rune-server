@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>RuneQuest 2D — Northern Wilderness</title>
+<title>RuneQuest 2D — Northern Wilderness & Audio</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&display=swap" rel="stylesheet">
 
@@ -548,6 +548,9 @@ canvas {
     </div>
 
     <div id="right-hud">
+      <button class="btn-fullscreen" id="audio-toggle-btn" onclick="toggleAudio()">
+        🔊 AUDIO: OFF
+      </button>
       <button class="btn-fullscreen" onclick="goFullscreen()">
         📺 FULLSCREEN
       </button>
@@ -698,6 +701,128 @@ const state = {
   popups: []
 };
 
+// --- PROCEDURAL WEB AUDIO ENGINE & BGM ZONES ---
+let audioCtx = null;
+let audioEnabled = false;
+let currentZone = 'none';
+let musicInterval = null;
+
+function toggleAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+  audioEnabled = !audioEnabled;
+  const btn = document.getElementById('audio-toggle-btn');
+  if (audioEnabled) {
+    btn.textContent = '🔊 AUDIO: ON';
+    btn.style.background = 'linear-gradient(#2b7b3c, #15421d)';
+    playSFX('coin');
+  } else {
+    btn.textContent = '🔊 AUDIO: OFF';
+    btn.style.background = 'linear-gradient(#9b352c, #57201b)';
+    if (musicInterval) clearInterval(musicInterval);
+  }
+}
+
+function playSFX(type) {
+  if (!audioEnabled || !audioCtx) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  const now = audioCtx.currentTime;
+
+  if (type === 'hit') {
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(150, now);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.15);
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + 0.15);
+    osc.start(now);
+    osc.stop(now + 0.15);
+  } else if (type === 'coin') {
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(987.77, now);
+    osc.frequency.setValueAtTime(1318.51, now + 0.08);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + 0.25);
+    osc.start(now);
+    osc.stop(now + 0.25);
+  } else if (type === 'levelup') {
+    const notes = [523.25, 659.25, 783.99, 1046.50];
+    notes.forEach((freq, idx) => {
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.connect(g); g.connect(audioCtx.destination);
+      o.frequency.setValueAtTime(freq, now + idx * 0.1);
+      g.gain.setValueAtTime(0.2, now + idx * 0.1);
+      g.gain.linearRampToValueAtTime(0.01, now + idx * 0.1 + 0.15);
+      o.start(now + idx * 0.1);
+      o.stop(now + idx * 0.1 + 0.15);
+    });
+  }
+}
+
+function checkAndUpdateBGM(playerX, playerY) {
+  if (!audioEnabled) return;
+  
+  let newZone = 'town';
+  // Shop Building (x: 32 to 40, y: 12 to 18)
+  if (playerX >= 32 && playerX <= 40 && playerY >= 12 && playerY <= 18) {
+    newZone = 'shop';
+  } else if (playerY < WORLD.wildernessBoundaryY) {
+    newZone = 'wilderness'; // Northern Wilderness Zone
+  }
+
+  if (newZone !== currentZone) {
+    currentZone = newZone;
+    if (musicInterval) clearInterval(musicInterval);
+    startMusicLoop(currentZone);
+  }
+}
+
+function startMusicLoop(zone) {
+  let notes = [];
+  let tempo = 300;
+
+  if (zone === 'shop') {
+    // Cozy merchant jingle
+    notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63];
+    tempo = 250;
+  } else if (zone === 'wilderness') {
+    // Dark minor suspense loop for the wilderness
+    notes = [110.00, 116.54, 130.81, 123.47];
+    tempo = 400;
+  } else {
+    // Upbeat peaceful town melody
+    notes = [440, 523.25, 659.25, 523.25, 587.33, 659.25];
+    tempo = 350;
+  }
+
+  let noteIdx = 0;
+  musicInterval = setInterval(() => {
+    if (!audioEnabled || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.type = zone === 'wilderness' ? 'sawtooth' : 'triangle';
+    osc.frequency.setValueAtTime(notes[noteIdx], audioCtx.currentTime);
+
+    gain.gain.setValueAtTime(0.12, audioCtx.currentTime);
+    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + (tempo / 1000) * 0.8);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + (tempo / 1000) * 0.8);
+
+    noteIdx = (noteIdx + 1) % notes.length;
+  }, tempo);
+}
+
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -775,6 +900,7 @@ socket.onmessage = event => {
       renderUI();
     } else if (data.type === 'GROUND_UPDATE') {
       state.groundItems = data.groundItems || [];
+      playSFX('coin');
     } else if (data.type === 'PLAYER_JOINED') {
       if (data.player) state.players[data.player.id] = data.player;
     } else if (data.type === 'PLAYER_LEFT') {
@@ -787,6 +913,11 @@ socket.onmessage = event => {
         color: data.color,
         born: performance.now()
       });
+      if (data.text === 'LEVEL UP!') {
+        playSFX('levelup');
+      } else {
+        playSFX('hit');
+      }
     } else if (data.type === 'SERVER_MSG') {
       addChat(data.text, 'system');
     } else if (data.type === 'CHAT_MSG') {
@@ -845,7 +976,6 @@ function unequipItem(slotName) {
   send({ type: 'UNEQUIP_ITEM', slotName });
 }
 
-// Healing: the server checks food, cooldown, and max HP.
 function itemHealAmount(item) {
   if (!item) return 0;
   return item.heal || ITEM_DESCRIPTIONS[item.id]?.heal || 0;
@@ -855,7 +985,6 @@ function eatItem(slotIndex) {
   send({ type: 'EAT_ITEM', slotIndex });
 }
 
-// Eat the food that best fits your missing HP without wasting much.
 function quickEat() {
   const me = state.players[state.playerId];
   if (!me) return;
@@ -886,76 +1015,53 @@ function quickEat() {
   eatItem(choice.index);
 }
 
-// Descriptions reflect the current server mechanics.
 const ITEM_DESCRIPTIONS = {
   coins: {
     type: 'Currency',
-    description:
-      'Money used to buy items from Bob’s General Store.'
+    description: 'Money used to buy items from Bob’s General Store.'
   },
   bones: {
     type: 'Loot',
-    description:
-      'Remains dropped by defeated enemies. Sell them to Bob for coins. ' +
-      'Burying bones and prayer training are not implemented yet.'
+    description: 'Remains dropped by defeated enemies. Sell them to Bob for coins.'
   },
   goblin_hide: {
     type: 'Loot',
-    description:
-      'A hide dropped by enemies. Sell it to Bob for coins. ' +
-      'Crafting with hides is not implemented yet.'
+    description: 'A hide dropped by enemies. Sell it to Bob for coins.'
   },
   bread: {
     type: 'Food',
     heal: 6,
-    description:
-      'A simple loaf of bread. Tap it in your inventory to eat it ' +
-      'and restore 6 HP.'
+    description: 'A simple loaf of bread. Tap it in your inventory to eat and restore 6 HP.'
   },
   cooked_meat: {
     type: 'Food',
     heal: 12,
-    description:
-      'A hearty piece of cooked meat. Tap it to eat and restore ' +
-      '12 HP. Sometimes dropped by defeated enemies.'
+    description: 'A hearty piece of cooked meat. Tap it to eat and restore 12 HP.'
   },
   health_potion: {
     type: 'Potion',
     heal: 25,
-    description:
-      'A bubbling red potion. Tap it to drink and restore 25 HP. ' +
-      'Best saved for tough wilderness fights.'
+    description: 'A bubbling red potion. Tap it to drink and restore 25 HP.'
   },
   iron_sword: {
     type: 'Weapon',
-    description:
-      'Can be equipped in your weapon slot. The current combat ' +
-      'code does not give this weapon an extra damage bonus yet.'
+    description: 'Can be equipped in your weapon slot.'
   },
   bronze_helm: {
     type: 'Head armor',
-    description:
-      'Can be equipped in your head slot. Adds 2 armor bonus, ' +
-      'improving your chance to block enemy attacks.'
+    description: 'Can be equipped in your head slot. Adds 2 armor bonus.'
   },
   wooden_shield: {
     type: 'Shield',
-    description:
-      'Can be equipped in your shield slot. Adds 3 armor bonus, ' +
-      'improving your chance to block enemy attacks.'
+    description: 'Can be equipped in your shield slot. Adds 3 armor bonus.'
   },
   fire_rune: {
     type: 'Magic supply',
-    description:
-      'A magical rune intended for fire spells. You can buy or sell ' +
-      'it, but spellcasting is not implemented yet.'
+    description: 'A magical rune intended for fire spells.'
   },
   rune_scimitar: {
     type: 'Weapon',
-    description:
-      'A rare weapon that can drop from level 10+ enemies. ' +
-      'Can be equipped in your weapon slot, but does not currently ' +
-      'give an extra damage bonus.'
+    description: 'A rare weapon that can drop from level 10+ enemies.'
   }
 };
 
@@ -986,7 +1092,6 @@ function showItemInfo(item, pointerX, pointerY) {
   close.className = 'item-info-close';
   close.type = 'button';
   close.textContent = '×';
-  close.setAttribute('aria-label', 'Close item information');
   close.onclick = hideItemInfo;
 
   header.append(name, close);
@@ -1020,8 +1125,6 @@ function showItemInfo(item, pointerX, pointerY) {
     lines.push(`Heals: ${heal} HP (tap in inventory to use)`);
   }
 
-  lines.push('Tap outside this panel to close.');
-
   lines.forEach(text => {
     const line = document.createElement('div');
     line.textContent = text;
@@ -1044,7 +1147,6 @@ function showItemInfo(item, pointerX, pointerY) {
   itemInfoPanel.style.top = top + 'px';
 }
 
-// Use delegated events so UI redraws do not add duplicate listeners.
 const ITEM_SELECTOR =
   '.inv-slot[data-inventory-index], ' +
   '.equip-slot[data-equipment-slot], ' +
@@ -1091,8 +1193,6 @@ document.addEventListener('pointerdown', event => {
 
   hideItemInfo();
   cancelItemHold();
-
-  // A new deliberate tap should work normally.
   suppressItemClickUntil = 0;
 
   if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -1116,10 +1216,7 @@ document.addEventListener('pointerdown', event => {
   element.classList.add('item-holding');
 
   hold.timer = setTimeout(() => {
-    if (
-      activeItemHold !== hold ||
-      !hold.element.isConnected
-    ) return;
+    if (activeItemHold !== hold || !hold.element.isConnected) return;
 
     const currentItem = itemFromElement(hold.element);
     if (!currentItem) {
@@ -1130,11 +1227,7 @@ document.addEventListener('pointerdown', event => {
     hold.fired = true;
     suppressItemClickUntil = Infinity;
 
-    showItemInfo(
-      currentItem,
-      hold.startX,
-      hold.startY
-    );
+    showItemInfo(currentItem, hold.startX, hold.startY);
   }, 500);
 }, true);
 
@@ -1157,22 +1250,15 @@ document.addEventListener('pointerup', event => {
   const hold = activeItemHold;
   if (!hold || hold.pointerId !== event.pointerId) return;
 
-  if (hold.fired) {
-    suppressItemClickUntil = Date.now() + 1000;
-  }
-
+  if (hold.fired) suppressItemClickUntil = Date.now() + 1000;
   cancelItemHold();
 }, true);
 
 document.addEventListener('pointercancel', () => {
-  if (activeItemHold?.fired) {
-    suppressItemClickUntil = Date.now() + 1000;
-  }
-
+  if (activeItemHold?.fired) suppressItemClickUntil = Date.now() + 1000;
   cancelItemHold();
 }, true);
 
-// Prevent equip, unequip, sell, or buy after a completed long press.
 document.addEventListener('click', event => {
   if (
     itemTarget(event.target) &&
@@ -1206,12 +1292,12 @@ function renderUI(force = false) {
   const me = state.players[state.playerId];
   if (!me) return;
 
+  checkAndUpdateBGM(me.x, me.y);
+
   document.getElementById('player-name-hud').textContent = me.name;
   document.getElementById('player-stats-hud').textContent =
     `Lvl: ${me.combatLvl} | HP: ${me.hp}/${me.maxHp}`;
 
-  // Matches the server: you level up when XP reaches level × 50.
-  // XP is a running total, so the bar starts at the last threshold.
   const level = me.combatLvl;
   const xpStart = level <= 3 ? 0 : (level - 1) * 50;
   const xpEnd = level * 50;
@@ -1599,7 +1685,6 @@ function tileAt(x, y) {
 
 const terrainCache = new Map();
 
-// Finer 64 × 64 terrain art. Every tile is drawn once and cached.
 function createTerrainTile(x, y) {
   const T = TILE_PX;
   const image = document.createElement('canvas');
@@ -1619,13 +1704,11 @@ function createTerrainTile(x, y) {
     paint.fillRect(a, b, w, h);
   }
 
-  // Draws old 32-grid shapes at 64-grid size.
   function r2(a, b, w, h, color) {
     r(a * 2, b * 2, w * 2, h * 2, color);
   }
 
   if (tile === 4) {
-    // Stone brick wall.
     r(0, 0, T, T, '#3a434d');
     for (let row = 0; row < 8; row++) {
       const offset = row % 2 ? 8 : 0;
@@ -1646,7 +1729,6 @@ function createTerrainTile(x, y) {
   }
 
   if (tile === 3) {
-    // Wooden plank floor.
     r(0, 0, T, T, '#5a3b24');
     for (let row = 0; row < 4; row++) {
       const py = row * 16;
@@ -1667,7 +1749,6 @@ function createTerrainTile(x, y) {
   }
 
   if (tile === 1) {
-    // Dirt road with pebbles and grassy edges.
     const dirt = north ? '#5e4c37' : '#6e5636';
     r(0, 0, T, T, dirt);
 
@@ -1712,7 +1793,6 @@ function createTerrainTile(x, y) {
     return image;
   }
 
-  // Grass base with soft patches, blades, and specks.
   const greens = north
     ? ['#28342a', '#2d372b', '#293029', '#30372c']
     : ['#16552e', '#185a30', '#17562e', '#1a5b31'];
@@ -1725,7 +1805,6 @@ function createTerrainTile(x, y) {
     ? ['#46533f', '#1d271f', '#56634a']
     : ['#2b7639', '#0f4425', '#3d8a45'];
 
-  // One shared base color avoids a checkerboard between tiles.
   r(0, 0, T, T, greens[0]);
 
   for (let i = 0; i < 8; i++) {
@@ -1758,7 +1837,6 @@ function createTerrainTile(x, y) {
   }
 
   if (north && !clearing && seed % 10 === 0) {
-    // Layered pine tree.
     shadow(33, 57, 24, 5);
     r(29, 42, 7, 16, '#4d3626');
     r(29, 42, 2, 16, '#6a4b33');
@@ -1787,7 +1865,6 @@ function createTerrainTile(x, y) {
       r(18 + rnd(22), 8 + rnd(36), 1, 1, '#4a7358');
     }
   } else if (north && !clearing && seed % 11 === 0) {
-    // Shaded boulder with lichen.
     shadow(34, 54, 24, 6);
     r(12, 30, 42, 22, '#4c544b');
     r(16, 24, 34, 8, '#5e665b');
@@ -1803,7 +1880,6 @@ function createTerrainTile(x, y) {
       r(18 + rnd(28), 24 + rnd(20), 2, 1, i % 2 ? '#7c8d55' : '#5f7044');
     }
   } else if (north && seed % 7 === 0) {
-    // Dry grass tuft.
     const tuft = ['#8a8054', '#716b49', '#a39a68'];
     for (let i = 0; i < 9; i++) {
       const bx = 20 + i * 3;
@@ -1812,7 +1888,6 @@ function createTerrainTile(x, y) {
       if (i % 2) r(bx + 1, 54 - h - 2, 1, 3, tuft[(i + 1) % 3]);
     }
   } else if (!north && seed % 23 === 0) {
-    // Small flower cluster.
     const petal = seed % 2 ? '#e3c158' : '#c897c8';
     for (let i = 0; i < 3; i++) {
       const fx = 18 + i * 11 + rnd(4);
@@ -1833,7 +1908,6 @@ function createTerrainTile(x, y) {
     (x === 10 || x === 19 || y === -40) &&
     seed % 4 !== 0
   ) {
-    // Broken stone wall.
     shadow(32, 54, 28, 5);
     r2(4, 11, 11, 10, '#5d6356');
     r2(17, 14, 10, 10, '#5d6356');
@@ -1852,7 +1926,6 @@ function createTerrainTile(x, y) {
   }
 
   if ((x === 29 || x === 38) && y === -24) {
-    // Fluted ruin pillar.
     shadow(32, 52, 20, 5);
     r(14, 6, 36, 44, '#5d6356');
     r(12, 4, 40, 6, '#8d907b');
@@ -1869,7 +1942,6 @@ function createTerrainTile(x, y) {
   }
 
   if (x === 18 && y === -33) {
-    // Campfire stone ring and logs. Flames are animated separately.
     shadow(32, 50, 24, 7);
     const stones = [[10, 42], [18, 48], [30, 50], [42, 48], [50, 42], [12, 36], [48, 36]];
     stones.forEach(([sx, sy]) => {
@@ -1896,9 +1968,6 @@ function getTerrainTile(x, y) {
   return terrainCache.get(key);
 }
 
-// Character art drawn 1:1 on the same pixel grid as the 64 × 64 map.
-// Each body part is shaded, then the whole figure gets a 1px outline.
-
 function hexToRgb(hex) {
   const n = parseInt(hex.slice(1), 16);
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
@@ -1919,7 +1988,6 @@ class SpritePainter {
     this.lc = this.layer.getContext('2d', { willReadFrequently: true });
   }
 
-  // Draw one shaded part. shapes(g) draws on a scratch layer.
   part(color, shapes, opts = {}) {
     const { lc, w, h } = this;
     lc.clearRect(0, 0, w, h);
@@ -1959,7 +2027,6 @@ class SpritePainter {
     }
   }
 
-  // Flat, unshaded detail pixels (eyes, slits, buckles).
   px(x, y, w, h, color) {
     const rgb = hexToRgb(color);
     for (let yy = y; yy < y + h; yy++) {
@@ -2000,7 +2067,6 @@ class SpritePainter {
   }
 }
 
-// Shape helpers for the scratch layer.
 function sRect(x, y, w, h) {
   return g => g.fillRect(x, y, w, h);
 }
@@ -2031,20 +2097,15 @@ const SPRITE_ART = {
     const tabard = variant === 'other' ? '#a03f4a' : '#3264a8';
     const steel = '#9aaebf';
 
-    // Plume trailing behind the helmet.
     p.part('#b0414c', shapes(sEllipse(33, 5, 3, 5), sEllipse(37, 9, 3, 4)));
-
-    // Legs and boots.
     p.part(steel, shapes(sRect(25, 44, 6, 13), sRect(33, 44, 6, 13)));
     p.part('#6b4a30', shapes(sRect(24, 55, 8, 7), sRect(32, 55, 8, 7)));
 
-    // Sword held upright in the right hand.
     p.part('#dbe6ee', sPoly([[49, 9], [51, 7], [53, 9], [53, 40], [49, 40]]), { light: .1 });
     p.part('#d7b45b', sRect(45, 40, 12, 3));
     p.part('#5a3d27', sRect(50, 43, 3, 6));
     p.part('#d7b45b', sRect(49, 49, 5, 3));
 
-    // Arms and torso.
     p.part(steel, shapes(sRect(16, 28, 7, 16), sRect(42, 28, 7, 16)));
     p.part(steel, sPoly([[21, 26], [43, 26], [42, 46], [22, 46]]));
     p.part(tabard, sPoly([[25, 30], [39, 30], [40, 52], [24, 52]]), { light: .2 });
@@ -2053,11 +2114,9 @@ const SPRITE_ART = {
     p.px(31, 34, 2, 6, '#e3c062');
     p.px(29, 36, 6, 2, '#e3c062');
 
-    // Pauldrons and gauntlets.
     p.part(steel, shapes(sEllipse(20, 28, 6, 5), sEllipse(44, 28, 6, 5)));
     p.part('#6f8294', shapes(sRect(16, 43, 7, 4), sRect(46, 43, 7, 5)));
 
-    // Great helm with visor.
     p.part(steel, shapes(sEllipse(32, 17, 10, 11), sRect(23, 17, 18, 9)));
     p.px(25, 17, 14, 2, '#151a22');
     p.px(31, 19, 2, 5, '#151a22');
@@ -2065,7 +2124,6 @@ const SPRITE_ART = {
     p.px(35, 22, 1, 1, '#151a22');
     p.px(31, 7, 2, 9, '#c7d5df');
 
-    // Kite shield in front of the left arm.
     p.part('#8a96a3', sPoly([[8, 28], [23, 28], [23, 41], [15.5, 52], [8, 41]]));
     p.part(tabard, sPoly([[10, 30], [21, 30], [21, 40], [15.5, 49], [10, 40]]), { light: .2 });
     p.px(15, 32, 2, 12, '#e3c062');
@@ -2078,7 +2136,6 @@ const SPRITE_ART = {
     p.part(skin, shapes(sRect(25, 49, 5, 9), sRect(34, 49, 5, 9)));
     p.part('#4a3424', shapes(sRect(23, 57, 8, 5), sRect(33, 57, 8, 5)));
 
-    // Rusty dagger.
     p.part('#a7a39a', sPoly([[47, 32], [49, 30], [51, 32], [51, 46], [47, 46]]), { light: .15 });
     p.part('#5a3d27', sRect(46, 46, 6, 3));
 
@@ -2088,7 +2145,6 @@ const SPRITE_ART = {
     p.part('#3a2a1c', sRect(21, 46, 22, 3));
     p.px(30, 46, 4, 3, '#b9a162');
 
-    // Big head and pointed ears.
     p.part(skin, sPoly([[22, 27], [5, 19], [11, 27], [21, 34]]));
     p.part(skin, sPoly([[42, 27], [59, 19], [53, 27], [43, 34]]));
     p.part(skin, sEllipse(32, 29, 12, 10));
@@ -2110,7 +2166,6 @@ const SPRITE_ART = {
     p.part(skin, shapes(sRect(22, 45, 8, 12), sRect(34, 45, 8, 12)));
     p.part('#3f2c1e', shapes(sRect(20, 56, 11, 6), sRect(33, 56, 11, 6)));
 
-    // Spiked club.
     p.part('#6e4b2f', sPoly([[49, 8], [57, 8], [55, 40], [51, 40]]));
     p.px(48, 12, 2, 2, '#c8ccd0');
     p.px(56, 16, 2, 2, '#c8ccd0');
@@ -2127,7 +2182,6 @@ const SPRITE_ART = {
     p.px(48, 19, 2, 3, '#c8ccd0');
     p.part(skin, shapes(sRect(8, 45, 10, 7), sRect(46, 40, 10, 7)));
 
-    // Head with iron cap.
     p.part(skin, sPoly([[22, 14], [10, 9], [16, 16], [22, 20]]));
     p.part(skin, sPoly([[42, 14], [54, 9], [48, 16], [42, 20]]));
     p.part(skin, sEllipse(32, 16, 11, 10));
@@ -2144,13 +2198,10 @@ const SPRITE_ART = {
   warrior(p) {
     const plate = '#4c5160';
 
-    // Tattered red cape behind the body.
     p.part('#7b1f2a', sPoly([[19, 26], [45, 26], [49, 58], [42, 55], [36, 59], [30, 55], [23, 59], [15, 56]]));
-
     p.part(plate, shapes(sRect(25, 44, 6, 13), sRect(33, 44, 6, 13)));
     p.part('#24262e', shapes(sRect(24, 55, 8, 7), sRect(32, 55, 8, 7)));
 
-    // Dark greatsword.
     p.part('#6c7384', sPoly([[49, 4], [52, 1], [55, 4], [55, 40], [49, 40]]), { light: .2 });
     p.px(52, 6, 1, 32, '#c9474f');
     p.part('#7a2a33', sRect(45, 40, 14, 3));
@@ -2162,7 +2213,6 @@ const SPRITE_ART = {
     p.part('#5a1c25', sRect(23, 43, 18, 3));
     p.px(30, 43, 4, 3, '#c9474f');
 
-    // Spiked pauldrons.
     p.part(plate, shapes(sEllipse(20, 28, 7, 5), sEllipse(44, 28, 7, 5)));
     p.part('#8a8f9c', shapes(
       sPoly([[14, 26], [10, 19], [18, 24]]),
@@ -2170,7 +2220,6 @@ const SPRITE_ART = {
     ), { light: .2 });
     p.part('#30333d', shapes(sRect(16, 43, 7, 4), sRect(46, 43, 7, 5)));
 
-    // Horned helm with glowing eyes.
     p.part('#b9ad8e', shapes(
       sPoly([[23, 13], [14, 3], [19, 12], [22, 17]]),
       sPoly([[41, 13], [50, 3], [45, 12], [42, 17]])
@@ -2188,7 +2237,6 @@ const SPRITE_ART = {
 
     p.part('#3e2a1c', shapes(sRect(24, 57, 8, 5), sRect(33, 57, 8, 5)));
 
-    // Long robe and sleeves.
     p.part(robe, sPoly([[22, 30], [42, 30], [47, 59], [17, 59]]));
     p.part(robe, shapes(
       sPoly([[22, 30], [13, 46], [20, 48], [25, 36]]),
@@ -2199,11 +2247,9 @@ const SPRITE_ART = {
     p.part('#d7b45b', sRect(22, 36, 20, 3));
     p.part(skinTone, shapes(sEllipse(16, 48, 4, 3), sEllipse(48, 48, 4, 3)));
 
-    // Coin pouch.
     p.part('#9b7a3e', sEllipse(44, 41, 4, 4));
     p.px(43, 37, 3, 1, '#4a3420');
 
-    // Face, beard, and pointed hat.
     p.part(skinTone, sEllipse(32, 23, 8, 8));
     p.px(28, 22, 2, 2, '#2b1d14');
     p.px(34, 22, 2, 2, '#2b1d14');
@@ -2220,29 +2266,24 @@ const SPRITE_ART = {
     const rock = '#6f7d5c';
     const moss = '#4b7a3a';
 
-    // Thick legs and feet.
     p.part(rock, shapes(sRect(30, 78, 14, 24), sRect(52, 78, 14, 24)));
     p.part('#4a5440', shapes(sEllipse(37, 104, 10, 5), sEllipse(59, 104, 10, 5)));
 
-    // Tree-trunk club resting at its side.
     p.part('#6b4a2f', sPoly([[80, 30], [90, 28], [88, 86], [82, 86]]));
     p.part(moss, shapes(sEllipse(85, 32, 7, 5), sEllipse(83, 48, 3, 3)));
 
-    // Long arms and huge fists.
     p.part(rock, shapes(
       sPoly([[22, 40], [12, 50], [10, 78], [20, 78], [26, 56]]),
       sPoly([[74, 40], [84, 50], [86, 74], [76, 74], [70, 56]])
     ));
     p.part('#5d6a4c', shapes(sEllipse(15, 82, 8, 7), sEllipse(81, 76, 8, 7)));
 
-    // Massive torso.
     p.part(rock, sEllipse(48, 60, 27, 24));
     p.part('#5a6849', sEllipse(48, 66, 17, 13));
     p.px(30, 50, 1, 7, '#46523a');
     p.px(66, 58, 1, 6, '#46523a');
     p.part('#6b4a2f', sRect(25, 78, 46, 5));
 
-    // Moss growing on shoulders and back.
     p.part(moss, shapes(
       sEllipse(26, 40, 10, 6),
       sEllipse(70, 40, 10, 6),
@@ -2251,7 +2292,6 @@ const SPRITE_ART = {
       sEllipse(62, 70, 5, 3)
     ), { light: .3 });
 
-    // Small head with glowing eyes and moss crown.
     p.part(rock, sEllipse(48, 26, 13, 13));
     p.part(moss, shapes(sEllipse(48, 15, 13, 6), sEllipse(39, 18, 4, 4)), { light: .3 });
     p.px(41, 25, 5, 3, '#f2d35a');
@@ -2264,7 +2304,6 @@ const SPRITE_ART = {
     p.px(44, 32, 2, 2, '#d8d2b0');
     p.px(51, 32, 2, 2, '#d8d2b0');
 
-    // Light moss flecks.
     [[30, 52], [64, 56], [50, 46], [22, 60], [78, 60], [45, 86], [60, 90]]
       .forEach(([x, y]) => p.px(x, y, 2, 1, '#7fae5c'));
   }
@@ -2294,7 +2333,6 @@ function getSpriteImage(name, variant = '') {
   return image;
 }
 
-// Sprites are drawn 1:1 so their pixels match the 64 × 64 map grid.
 function drawSprite(x, y, name, big = false, variant = '') {
   const image = getSpriteImage(name, variant);
   const cx = x + TILE_PX / 2;
@@ -2312,7 +2350,6 @@ function drawSprite(x, y, name, big = false, variant = '') {
   return top;
 }
 
-// Sword-swing arc shown while a player is attacking.
 function drawAttackSword(x, y) {
   const t = (performance.now() % 600) / 600;
   const cx = x + 40;
