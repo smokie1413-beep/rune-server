@@ -21,6 +21,7 @@ const SPAWN = { x: 22, y: 22 };
 const ENEMY_ATTACK_INTERVAL_MS = 1200;
 const ENEMY_MELEE_RANGE = 1.5;
 const RESPAWN_PROTECTION_MS = 3000;
+const EAT_COOLDOWN_MS = 1800;
 
 let savedAccounts = {};
 
@@ -82,7 +83,17 @@ const ITEM_DB = {
   bread: {
     id: 'bread', name: 'Bread', icon: '🍞',
     buyPrice: 12, sellPrice: 6,
-    stackable: false, slot: null
+    stackable: false, slot: null, heal: 6
+  },
+  cooked_meat: {
+    id: 'cooked_meat', name: 'Cooked Meat', icon: '🍖',
+    buyPrice: 30, sellPrice: 12,
+    stackable: false, slot: null, heal: 12
+  },
+  health_potion: {
+    id: 'health_potion', name: 'Health Potion', icon: '🧪',
+    buyPrice: 90, sellPrice: 40,
+    stackable: false, slot: null, heal: 25
   },
   iron_sword: {
     id: 'iron_sword', name: 'Iron Sword', icon: '🗡️',
@@ -113,6 +124,8 @@ const ITEM_DB = {
 
 const SHOP_STOCK = [
   ITEM_DB.bread,
+  ITEM_DB.cooked_meat,
+  ITEM_DB.health_potion,
   ITEM_DB.iron_sword,
   ITEM_DB.bronze_helm,
   ITEM_DB.wooden_shield,
@@ -122,6 +135,7 @@ const SHOP_STOCK = [
 
 const players = {};
 const respawnProtectionUntil = new Map();
+const lastAteAt = new Map();
 let groundItems = [];
 
 function makeNpc(id, name, x, y, hp, level, type, region) {
@@ -230,6 +244,82 @@ function addItemToInventory(player, itemId, count = 1) {
   return true;
 }
 
+// Saved items are copies, so refresh their stats from ITEM_DB.
+// This gives old saved bread its new healing value.
+function refreshItem(item) {
+  if (!item || !ITEM_DB[item.id]) return item;
+  return { ...ITEM_DB[item.id], count: item.count || 1 };
+}
+
+function refreshSavedItems(player) {
+  if (Array.isArray(player.inventory)) {
+    player.inventory = player.inventory.map(refreshItem);
+  }
+
+  if (player.equipment) {
+    for (const slot of Object.keys(player.equipment)) {
+      player.equipment[slot] = refreshItem(player.equipment[slot]);
+    }
+  }
+}
+
+function sendTo(ws, text) {
+  if (ws.readyState === 1) {
+    ws.send(JSON.stringify({ type: 'SERVER_MSG', text }));
+  }
+}
+
+function eatItem(ws, p, index) {
+  if (
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= p.inventory.length
+  ) return;
+
+  const item = p.inventory[index];
+  const heal = item && ITEM_DB[item.id] && ITEM_DB[item.id].heal;
+
+  if (!heal) return;
+
+  if (p.hp >= p.maxHp) {
+    sendTo(ws, 'You are already at full health.');
+    return;
+  }
+
+  const now = Date.now();
+
+  if (now - (lastAteAt.get(p.id) || 0) < EAT_COOLDOWN_MS) {
+    sendTo(ws, 'You are still eating...');
+    return;
+  }
+
+  lastAteAt.set(p.id, now);
+
+  const healed = Math.min(heal, p.maxHp - p.hp);
+  p.hp += healed;
+
+  item.count = (item.count || 1) - 1;
+  if (item.count <= 0) p.inventory[index] = null;
+
+  sendTo(
+    ws,
+    `You ${item.id === 'health_potion' ? 'drink' : 'eat'} the ` +
+    `${item.name} and heal ${healed} HP.`
+  );
+
+  broadcast({
+    type: 'HITSPLAT',
+    text: `+${healed}`,
+    x: Math.round(p.x),
+    y: Math.round(p.y),
+    color: '#55ee77'
+  });
+
+  rememberPlayer(p);
+  saveAccountsToDisk();
+  broadcastWorld();
+}
+
 function isWallTile(x, y) {
   if (
     !Number.isFinite(x) ||
@@ -327,6 +417,8 @@ wss.on('connection', (ws, req) => {
 
     playerData.targetX = Math.round(playerData.x);
     playerData.targetY = Math.round(playerData.y);
+
+    refreshSavedItems(playerData);
   } else {
     const inventory = Array(28).fill(null);
 
@@ -531,6 +623,8 @@ wss.on('connection', (ws, req) => {
             }
           }
         }
+      } else if (data.type === 'EAT_ITEM') {
+        eatItem(ws, p, data.slotIndex);
       } else if (data.type === 'SELL_ITEM') {
         const index = data.slotIndex;
 
@@ -598,6 +692,7 @@ wss.on('connection', (ws, req) => {
     }
 
     respawnProtectionUntil.delete(playerId);
+    lastAteAt.delete(playerId);
     delete players[playerId];
 
     broadcast({
@@ -760,6 +855,11 @@ setInterval(() => {
       const drops = ['bones'];
 
       if (Math.random() < 0.7) drops.push('coins');
+
+      // Food drops let players keep fighting longer.
+      if (Math.random() < (npc.level >= 10 ? 0.35 : 0.2)) {
+        drops.push('cooked_meat');
+      }
 
       if (npc.level >= 10 && Math.random() < 0.15) {
         drops.push('rune_scimitar');

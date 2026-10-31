@@ -535,6 +535,8 @@ canvas {
       title="Character & Equipment">👤</button>
     <button class="tab-btn" onclick="toggleWindow('inventory-win')"
       title="Inventory">🎒</button>
+    <button class="tab-btn" onclick="quickEat()"
+      title="Quick heal: eat the best food for your missing HP">🍖</button>
   </div>
 
   <div class="ui-window" id="char-win">
@@ -605,7 +607,7 @@ canvas {
     </div>
     <div class="ui-body">
       <div class="item-help-hint">
-        Hold an item to see what it is and what it does.
+        Tap food to eat and heal. Hold an item to inspect it.
       </div>
       <div class="grid-28" id="inventory-grid"></div>
     </div>
@@ -809,6 +811,47 @@ function unequipItem(slotName) {
   send({ type: 'UNEQUIP_ITEM', slotName });
 }
 
+// Healing: the server checks food, cooldown, and max HP.
+function itemHealAmount(item) {
+  if (!item) return 0;
+  return item.heal || ITEM_DESCRIPTIONS[item.id]?.heal || 0;
+}
+
+function eatItem(slotIndex) {
+  send({ type: 'EAT_ITEM', slotIndex });
+}
+
+// Eat the food that best fits your missing HP without wasting much.
+function quickEat() {
+  const me = state.players[state.playerId];
+  if (!me) return;
+
+  const missing = me.maxHp - me.hp;
+
+  if (missing <= 0) {
+    addChat('You are already at full health.', 'system');
+    return;
+  }
+
+  const foods = me.inventory
+    .map((item, index) => ({ index, heal: itemHealAmount(item) }))
+    .filter(food => food.heal > 0);
+
+  if (!foods.length) {
+    addChat('You have no food. Buy some from Bob\'s shop.', 'system');
+    return;
+  }
+
+  const fits = foods
+    .filter(food => food.heal <= missing)
+    .sort((a, b) => b.heal - a.heal);
+
+  const choice = fits[0] ||
+    foods.sort((a, b) => a.heal - b.heal)[0];
+
+  eatItem(choice.index);
+}
+
 // Descriptions reflect the current server mechanics.
 const ITEM_DESCRIPTIONS = {
   coins: {
@@ -830,9 +873,24 @@ const ITEM_DESCRIPTIONS = {
   },
   bread: {
     type: 'Food',
+    heal: 6,
     description:
-      'A loaf of bread. It can be bought or sold, but eating and ' +
-      'healing with food are not implemented in the current game.'
+      'A simple loaf of bread. Tap it in your inventory to eat it ' +
+      'and restore 6 HP.'
+  },
+  cooked_meat: {
+    type: 'Food',
+    heal: 12,
+    description:
+      'A hearty piece of cooked meat. Tap it to eat and restore ' +
+      '12 HP. Sometimes dropped by defeated enemies.'
+  },
+  health_potion: {
+    type: 'Potion',
+    heal: 25,
+    description:
+      'A bubbling red potion. Tap it to drink and restore 25 HP. ' +
+      'Best saved for tough wilderness fights.'
   },
   iron_sword: {
     type: 'Weapon',
@@ -921,6 +979,11 @@ function showItemInfo(item, pointerX, pointerY) {
 
   if (item.slot) {
     lines.push(`Equipment slot: ${item.slot}`);
+  }
+
+  const heal = itemHealAmount(item);
+  if (heal) {
+    lines.push(`Heals: ${heal} HP (tap in inventory to use)`);
   }
 
   lines.push('Tap outside this panel to close.');
@@ -1198,6 +1261,8 @@ function renderUI(force = false) {
           send({ type: 'SELL_ITEM', slotIndex: index });
         } else if (item.slot) {
           send({ type: 'EQUIP_ITEM', slotIndex: index });
+        } else if (itemHealAmount(item)) {
+          eatItem(index);
         }
       };
     }
@@ -1214,7 +1279,8 @@ function renderUI(force = false) {
     row.dataset.shopItem = item.id;
 
     const label = document.createElement('span');
-    label.textContent = `${item.icon} ${item.name} (${item.buyPrice}g)`;
+    label.textContent = `${item.icon} ${item.name} (${item.buyPrice}g)` +
+      (item.heal ? ` • +${item.heal} HP` : '');
 
     const button = document.createElement('button');
     button.className = 'shop-btn';
