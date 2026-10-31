@@ -129,6 +129,26 @@ const ITEM_DB = {
     buyPrice: 8, sellPrice: 3,
     stackable: true, slot: null
   },
+  oak_logs: {
+    id: 'oak_logs', name: 'Oak Logs', icon: '🪵',
+    buyPrice: 20, sellPrice: 8,
+    stackable: true, slot: null
+  },
+  willow_logs: {
+    id: 'willow_logs', name: 'Willow Logs', icon: '🪵',
+    buyPrice: 40, sellPrice: 15,
+    stackable: true, slot: null
+  },
+  bronze_axe: {
+    id: 'bronze_axe', name: 'Bronze Axe', icon: '🪓',
+    buyPrice: 50, sellPrice: 20,
+    stackable: false, slot: 'weapon', axeTier: 1
+  },
+  iron_axe: {
+    id: 'iron_axe', name: 'Iron Axe', icon: '🪓',
+    buyPrice: 180, sellPrice: 70,
+    stackable: false, slot: 'weapon', axeTier: 2
+  },
   fire_rune: {
     id: 'fire_rune', name: 'Fire Rune', icon: '🔥',
     buyPrice: 15, sellPrice: 7,
@@ -148,6 +168,8 @@ const SHOP_STOCK = [
   ITEM_DB.iron_sword,
   ITEM_DB.bronze_helm,
   ITEM_DB.wooden_shield,
+  ITEM_DB.bronze_axe,
+  ITEM_DB.iron_axe,
   ITEM_DB.fire_rune,
   ITEM_DB.rune_scimitar
 ];
@@ -212,17 +234,68 @@ const npcs = [
   )
 ];
 
+const TREE_TYPES = {
+  normal: {
+    name: 'Tree',
+    level: 1,
+    xp: 25,
+    log: 'logs',
+    maxHp: 3,
+    respawnTicks: 40
+  },
+  oak: {
+    name: 'Oak',
+    level: 15,
+    xp: 38,
+    log: 'oak_logs',
+    maxHp: 5,
+    respawnTicks: 55
+  },
+  willow: {
+    name: 'Willow',
+    level: 30,
+    xp: 68,
+    log: 'willow_logs',
+    maxHp: 7,
+    respawnTicks: 70
+  }
+};
+
+function makeTree(id, x, y, type) {
+  const def = TREE_TYPES[type];
+  return {
+    id,
+    x,
+    y,
+    type,
+    name: def.name,
+    level: def.level,
+    alive: true,
+    hp: def.maxHp,
+    maxHp: def.maxHp,
+    respawnTicks: 0
+  };
+}
+
 const trees = [
-  { id: 1, x: 12, y: 18, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 2, x: 14, y: 26, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 3, x: 28, y: 18, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 4, x: 35, y: 25, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 5, x: 8, y: 30, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 6, x: 40, y: 10, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 7, x: 18, y: 35, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 8, x: 45, y: 22, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 9, x: 10, y: 12, type: 'normal', alive: true, respawnTicks: 0 },
-  { id: 10, x: 42, y: 30, type: 'normal', alive: true, respawnTicks: 0 }
+  // Normal trees around town
+  makeTree(1, 12, 18, 'normal'),
+  makeTree(2, 14, 26, 'normal'),
+  makeTree(3, 28, 18, 'normal'),
+  makeTree(4, 35, 25, 'normal'),
+  makeTree(5, 8, 30, 'normal'),
+  makeTree(6, 40, 10, 'normal'),
+  makeTree(7, 10, 12, 'normal'),
+  makeTree(8, 42, 30, 'normal'),
+  // Oaks a bit further out
+  makeTree(9, 5, 35, 'oak'),
+  makeTree(10, 48, 28, 'oak'),
+  makeTree(11, 15, 40, 'oak'),
+  makeTree(12, 50, 15, 'oak'),
+  // Willows further north / edges
+  makeTree(13, 3, 42, 'willow'),
+  makeTree(14, 55, 35, 'willow'),
+  makeTree(15, 20, 45, 'willow')
 ];
 
 function broadcast(data) {
@@ -519,6 +592,7 @@ wss.on('connection', (ws, req) => {
 
     inventory[0] = { ...ITEM_DB.coins, count: 100 };
     inventory[1] = { ...ITEM_DB.bread, count: 2 };
+    inventory[2] = { ...ITEM_DB.bronze_axe, count: 1 };
 
     playerData = {
       id: playerId,
@@ -1010,9 +1084,80 @@ setInterval(() => {
         return;
       }
 
-      // Chop success
+      const def = TREE_TYPES[tree.type] || TREE_TYPES.normal;
+      const wcLevel = p.stats.woodcutting || 1;
+
+      // Level requirement
+      if (wcLevel < def.level) {
+        p.action = null;
+        broadcast({
+          type: 'HITSPLAT',
+          text: `Need WC ${def.level}`,
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          color: '#ff8855'
+        });
+        return;
+      }
+
+      // Must have an axe (equipped or in inventory)
+      let axeTier = 0;
+      if (p.equipment?.weapon?.axeTier) {
+        axeTier = p.equipment.weapon.axeTier;
+      } else {
+        const invAxe = p.inventory.find(it => it && it.axeTier);
+        if (invAxe) axeTier = invAxe.axeTier;
+      }
+
+      if (axeTier < 1) {
+        p.action = null;
+        broadcast({
+          type: 'HITSPLAT',
+          text: 'Need an axe!',
+          x: Math.round(p.x),
+          y: Math.round(p.y),
+          color: '#ff8855'
+        });
+        return;
+      }
+
+      // Success chance rises with level difference + axe tier
+      const levelBonus = Math.min(0.45, (wcLevel - def.level) * 0.02);
+      const axeBonus = (axeTier - 1) * 0.12;
+      const successChance = Math.min(0.92, 0.55 + levelBonus + axeBonus);
+
       p.isAttacking = true;
-      const xpGain = 25;
+
+      if (Math.random() > successChance) {
+        // Missed swing
+        broadcast({
+          type: 'HITSPLAT',
+          text: 'Swing',
+          x: Math.round(tree.x),
+          y: Math.round(tree.y),
+          color: '#aaaaaa'
+        });
+        return;
+      }
+
+      // Successful hit
+      tree.hp = (tree.hp || def.maxHp) - 1;
+
+      broadcast({
+        type: 'HITSPLAT',
+        text: 'Chop!',
+        x: Math.round(tree.x),
+        y: Math.round(tree.y),
+        color: '#88cc55'
+      });
+
+      if (tree.hp > 0) {
+        // Still standing – keep chopping
+        return;
+      }
+
+      // Tree is down
+      const xpGain = def.xp;
       p.woodcuttingXp = (p.woodcuttingXp || 0) + xpGain;
 
       let leveled = false;
@@ -1032,10 +1177,11 @@ setInterval(() => {
         });
       }
 
-      if (addItemToInventory(p, 'logs', 1)) {
+      const logId = def.log;
+      if (addItemToInventory(p, logId, 1)) {
         broadcast({
           type: 'HITSPLAT',
-          text: '+1 🪵',
+          text: `+1 ${ITEM_DB[logId].name}`,
           x: Math.round(tree.x),
           y: Math.round(tree.y),
           color: '#88cc55'
@@ -1051,7 +1197,7 @@ setInterval(() => {
       }
 
       tree.alive = false;
-      tree.respawnTicks = 50;
+      tree.respawnTicks = def.respawnTicks;
       p.action = null;
       p.isAttacking = false;
 
@@ -1073,7 +1219,10 @@ setInterval(() => {
 
   trees.forEach(tree => {
     if (!tree.alive && --tree.respawnTicks <= 0) {
+      const def = TREE_TYPES[tree.type] || TREE_TYPES.normal;
       tree.alive = true;
+      tree.hp = def.maxHp;
+      tree.maxHp = def.maxHp;
     }
   });
 
