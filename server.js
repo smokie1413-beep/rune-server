@@ -194,7 +194,7 @@ const respawnProtectionUntil = new Map();
 const lastAteAt = new Map();
 let groundItems = [];
 
-function makeNpc(id, name, x, y, hp, level, type, region) {
+function makeNpc(id, name, x, y, hp, level, type, region, questId = null) {
   return {
     id,
     name,
@@ -210,78 +210,119 @@ function makeNpc(id, name, x, y, hp, level, type, region) {
     alive: true,
     respawnTicks: 0,
     type,
-    region
+    region,
+    questId
   };
 }
 
+function isFriendlyNpc(npc) {
+  return npc && (npc.type === 'shopkeeper' || npc.type === 'questgiver');
+}
+
 const npcs = [
+  // --- Friendly town folk ---
+  makeNpc(
+    3, 'Shopkeeper Bob',
+    36, 15, 100, 15,
+    'shopkeeper', 'town', 'starter'
+  ),
+  makeNpc(
+    20, 'Guard Captain Mira',
+    22, 18, 100, 20,
+    'questgiver', 'town', 'orc_hunt'
+  ),
+  makeNpc(
+    21, 'Elder Rowan',
+    16, 26, 80, 12,
+    'questgiver', 'town', 'log_delivery'
+  ),
+  makeNpc(
+    22, 'Farmer Tess',
+    48, 30, 60, 8,
+    'questgiver', 'town', null
+  ),
+  makeNpc(
+    23, 'Stablehand Pip',
+    28, 22, 50, 5,
+    'questgiver', 'town', null
+  ),
+
+  // --- Town / fringe monsters (spread out) ---
   makeNpc(
     1, 'Goblin',
-    18, 28, 12, 2,
+    8, 34, 12, 2,
     'monster', 'town'
   ),
   makeNpc(
     2, 'Goblin Guard',
-    26, 30, 20, 5,
+    52, 38, 20, 5,
     'monster', 'town'
   ),
   makeNpc(
-    3, 'Shopkeeper Bob',
-    36, 15, 100, 15,
-    'shopkeeper', 'town'
-  ),
-  // Orc pack just north of Bob's shop.
-  makeNpc(
     7, 'Orc Marauder',
-    36, 9, 35, 8,
+    55, 6, 35, 8,
     'monster', 'town'
   ),
   makeNpc(
     8, 'Orc Raider',
-    33, 8, 28, 7,
+    6, 10, 28, 7,
     'monster', 'town'
   ),
   makeNpc(
     9, 'Orc Raider',
-    39, 8, 28, 7,
+    60, 20, 28, 7,
     'monster', 'town'
   ),
-  // Extra town threats near the roads / fields.
   makeNpc(
     10, 'Goblin Scout',
-    14, 20, 14, 3,
+    4, 42, 14, 3,
     'monster', 'town'
   ),
   makeNpc(
     11, 'Goblin Scout',
-    42, 24, 14, 3,
+    62, 32, 14, 3,
     'monster', 'town'
   ),
   makeNpc(
     12, 'Wild Dog',
-    20, 16, 16, 4,
+    44, 44, 16, 4,
     'monster', 'town'
   ),
   makeNpc(
     13, 'Bandit',
-    28, 12, 24, 6,
+    10, 6, 24, 6,
+    'monster', 'town'
+  ),
+  makeNpc(
+    14, 'Goblin',
+    40, 48, 12, 2,
+    'monster', 'town'
+  ),
+  makeNpc(
+    15, 'Wild Dog',
+    12, 48, 16, 4,
     'monster', 'town'
   ),
 
-  // These enemies now spawn NORTH of town.
+  // --- Wilderness (farther north, more spacing) ---
   makeNpc(
     4, 'Hobgoblin Brute',
-    25, -20, 45, 10,
+    20, -18, 45, 10,
     'monster', 'wilderness'
   ),
   makeNpc(
     5, 'Moss Giant',
-    35, -28, 60, 12,
+    42, -30, 60, 12,
     'monster', 'wilderness'
   ),
   makeNpc(
     6, 'Dark Warrior',
-    15, -35, 50, 10,
+    12, -38, 50, 10,
+    'monster', 'wilderness'
+  ),
+  makeNpc(
+    16, 'Hobgoblin Brute',
+    55, -22, 45, 10,
     'monster', 'wilderness'
   )
 ];
@@ -435,16 +476,80 @@ function getPlayerSocket(playerId) {
   return null;
 }
 
+function defaultQuests() {
+  return {
+    starter: {
+      id: 'starter',
+      title: "Bob's first job",
+      stage: 'chop',
+      progress: 0,
+      goal: 5,
+      done: false,
+      giver: 'Shopkeeper Bob'
+    },
+    orc_hunt: {
+      id: 'orc_hunt',
+      title: 'Clear the raiders',
+      stage: 'locked',
+      progress: 0,
+      goal: 3,
+      done: false,
+      giver: 'Guard Captain Mira'
+    },
+    log_delivery: {
+      id: 'log_delivery',
+      title: "Elder's firewood",
+      stage: 'locked',
+      progress: 0,
+      goal: 8,
+      done: false,
+      giver: 'Elder Rowan'
+    }
+  };
+}
+
+function ensureQuests(player) {
+  if (!player.quests || typeof player.quests !== 'object') {
+    player.quests = defaultQuests();
+  }
+
+  // Migrate legacy single-quest saves.
+  if (player.quest && player.quest.id === 'starter') {
+    player.quests.starter = {
+      ...player.quests.starter,
+      ...player.quest
+    };
+    delete player.quest;
+  }
+
+  const defaults = defaultQuests();
+  for (const key of Object.keys(defaults)) {
+    if (!player.quests[key]) player.quests[key] = { ...defaults[key] };
+  }
+
+  // Unlock follow-ups once Bob's job is done.
+  if (player.quests.starter.done) {
+    if (player.quests.orc_hunt.stage === 'locked') {
+      player.quests.orc_hunt.stage = 'available';
+    }
+    if (player.quests.log_delivery.stage === 'locked') {
+      player.quests.log_delivery.stage = 'available';
+    }
+  }
+}
+
 function sendQuestUpdate(ws, player) {
-  if (!ws || ws.readyState !== 1 || !player?.quest) return;
+  if (!ws || ws.readyState !== 1 || !player) return;
+  ensureQuests(player);
   ws.send(JSON.stringify({
     type: 'QUEST_UPDATE',
-    quest: player.quest
+    quests: player.quests
   }));
 }
 
 function advanceStarterChop(player, ws) {
-  const q = player.quest;
+  ensureQuests(player);
+  const q = player.quests.starter;
   if (!q || q.done || q.stage !== 'chop') return;
 
   q.progress = Math.min(q.goal, (q.progress || 0) + 1);
@@ -461,47 +566,211 @@ function advanceStarterChop(player, ws) {
   sendQuestUpdate(ws, player);
 }
 
-function tryCompleteStarterQuest(player, ws) {
-  const q = player.quest;
-  if (!q || q.done) {
+function advanceOrcHunt(player, ws) {
+  ensureQuests(player);
+  const q = player.quests.orc_hunt;
+  if (!q || q.done || q.stage !== 'kill') return;
+
+  q.progress = Math.min(q.goal, (q.progress || 0) + 1);
+  if (q.progress >= q.goal) {
+    q.stage = 'return';
+    q.progress = q.goal;
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({
         type: 'SERVER_MSG',
-        text: q?.done
-          ? "Bob: Thanks again. Come back when you need supplies."
-          : "Bob: Welcome to my shop."
+        text: 'Quest updated: Report back to Guard Captain Mira.'
       }));
     }
-    return false;
   }
+  sendQuestUpdate(ws, player);
+}
 
-  if (q.stage === 'chop') {
-    if (ws && ws.readyState === 1) {
+function countLogsInInventory(player) {
+  let total = 0;
+  for (const item of player.inventory || []) {
+    if (item && (item.id === 'logs' || item.id === 'oak_logs' || item.id === 'willow_logs')) {
+      total += item.count || 1;
+    }
+  }
+  return total;
+}
+
+function removeLogsFromInventory(player, amount) {
+  let left = amount;
+  for (let i = 0; i < player.inventory.length && left > 0; i++) {
+    const item = player.inventory[i];
+    if (!item || (item.id !== 'logs' && item.id !== 'oak_logs' && item.id !== 'willow_logs')) {
+      continue;
+    }
+    const have = item.count || 1;
+    if (have <= left) {
+      left -= have;
+      player.inventory[i] = null;
+    } else {
+      item.count = have - left;
+      left = 0;
+    }
+  }
+  return left === 0;
+}
+
+function talkToNpc(player, npc, ws) {
+  ensureQuests(player);
+
+  if (npc.name === 'Shopkeeper Bob') {
+    const q = player.quests.starter;
+    if (q.done) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: "Bob: Thanks again. The Guard Captain and Elder may need help."
+      }));
+      return;
+    }
+    if (q.stage === 'chop') {
       ws.send(JSON.stringify({
         type: 'SERVER_MSG',
         text: `Bob: Chop ${q.goal} trees for me first. Progress: ${q.progress}/${q.goal}.`
       }));
+      return;
     }
-    return false;
-  }
-
-  if (q.stage === 'deliver') {
-    q.done = true;
-    q.stage = 'done';
-    addItemToInventory(player, 'coins', 50);
-    addItemToInventory(player, 'bread', 2);
-    rememberPlayer(player);
-    if (ws && ws.readyState === 1) {
+    if (q.stage === 'deliver') {
+      q.done = true;
+      q.stage = 'done';
+      player.quests.orc_hunt.stage = 'available';
+      player.quests.log_delivery.stage = 'available';
+      addItemToInventory(player, 'coins', 50);
+      addItemToInventory(player, 'bread', 2);
+      rememberPlayer(player);
       ws.send(JSON.stringify({
         type: 'SERVER_MSG',
-        text: "Bob: Fine work. Here's 50 coins and some bread."
+        text: "Bob: Fine work. Here's 50 coins and bread. Talk to Mira and Elder Rowan for more work."
       }));
       sendQuestUpdate(ws, player);
+      return;
     }
-    return true;
   }
 
-  return false;
+  if (npc.name === 'Guard Captain Mira') {
+    const q = player.quests.orc_hunt;
+    if (q.done) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: 'Mira: Town is safer thanks to you. Stay sharp out there.'
+      }));
+      return;
+    }
+    if (q.stage === 'locked') {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: 'Mira: Help Bob with his woodcutting job first, then come see me.'
+      }));
+      return;
+    }
+    if (q.stage === 'available') {
+      q.stage = 'kill';
+      q.progress = 0;
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: `Mira: Orc raiders threaten the roads. Slay ${q.goal} orcs, then report back.`
+      }));
+      sendQuestUpdate(ws, player);
+      return;
+    }
+    if (q.stage === 'kill') {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: `Mira: Orcs slain: ${q.progress}/${q.goal}. Keep at it.`
+      }));
+      return;
+    }
+    if (q.stage === 'return') {
+      q.done = true;
+      q.stage = 'done';
+      addItemToInventory(player, 'coins', 120);
+      addItemToInventory(player, 'health_potion', 1);
+      rememberPlayer(player);
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: "Mira: Solid work, soldier. Take these coins and a potion."
+      }));
+      sendQuestUpdate(ws, player);
+      return;
+    }
+  }
+
+  if (npc.name === 'Elder Rowan') {
+    const q = player.quests.log_delivery;
+    if (q.done) {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: 'Rowan: The hearths burn warm. Blessings on your path.'
+      }));
+      return;
+    }
+    if (q.stage === 'locked') {
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: 'Rowan: Finish Bob\'s task, then I will ask a favor of you.'
+      }));
+      return;
+    }
+    if (q.stage === 'available') {
+      q.stage = 'gather';
+      q.progress = 0;
+      ws.send(JSON.stringify({
+        type: 'SERVER_MSG',
+        text: `Rowan: Winter comes. Bring me ${q.goal} logs of any kind.`
+      }));
+      sendQuestUpdate(ws, player);
+      return;
+    }
+    if (q.stage === 'gather') {
+      const have = countLogsInInventory(player);
+      if (have >= q.goal) {
+        removeLogsFromInventory(player, q.goal);
+        q.done = true;
+        q.stage = 'done';
+        q.progress = q.goal;
+        addItemToInventory(player, 'coins', 75);
+        addItemToInventory(player, 'cooked_meat', 3);
+        rememberPlayer(player);
+        ws.send(JSON.stringify({
+          type: 'SERVER_MSG',
+          text: "Rowan: These will keep us warm. Take coins and cooked meat."
+        }));
+        sendQuestUpdate(ws, player);
+      } else {
+        q.progress = have;
+        sendQuestUpdate(ws, player);
+        ws.send(JSON.stringify({
+          type: 'SERVER_MSG',
+          text: `Rowan: I need ${q.goal} logs. You have ${have}.`
+        }));
+      }
+      return;
+    }
+  }
+
+  if (npc.name === 'Farmer Tess') {
+    ws.send(JSON.stringify({
+      type: 'SERVER_MSG',
+      text: 'Tess: Watch the eastern fields — dogs and goblins wander out there.'
+    }));
+    return;
+  }
+
+  if (npc.name === 'Stablehand Pip') {
+    ws.send(JSON.stringify({
+      type: 'SERVER_MSG',
+      text: 'Pip: Cross the bridge for Bob\'s shop. North road leads to the wilds.'
+    }));
+    return;
+  }
+
+  ws.send(JSON.stringify({
+    type: 'SERVER_MSG',
+    text: `${npc.name}: Hello, traveler.`
+  }));
 }
 
 function addItemToInventory(player, itemId, count = 1) {
@@ -686,8 +955,19 @@ function isShopBridge(tx, ty) {
   return tx >= 35 && tx <= 37 && ty >= 19 && ty <= 21;
 }
 
-function isAuthoredGround(tx, ty) {
+function isTownPath(tx, ty) {
+  // Wider town roads: crossroads, square ring, and lanes to landmarks.
   if (tx === 22 || tx === 23 || ty === 22) return true;
+  if (tx === 16 || ty === 26) return true; // elder lane
+  if (tx === 28 && ty >= 18 && ty <= 26) return true; // stablehand
+  if (ty === 18 && tx >= 16 && tx <= 36) return true; // north square
+  if (ty === 30 && tx >= 22 && tx <= 50) return true; // farmer road
+  if (tx === 48 && ty >= 22 && ty <= 32) return true;
+  return false;
+}
+
+function isAuthoredGround(tx, ty) {
+  if (isTownPath(tx, ty)) return true;
 
   if (
     (ty === -20 && tx >= 22 && tx <= 27) ||
@@ -864,16 +1144,7 @@ wss.on('connection', (ws, req) => {
     if (!playerData.stats) playerData.stats = {};
     if (playerData.stats.woodcutting == null) playerData.stats.woodcutting = 1;
     if (playerData.woodcuttingXp == null) playerData.woodcuttingXp = 0;
-    if (!playerData.quest) {
-      playerData.quest = {
-        id: 'starter',
-        title: "Bob's first job",
-        stage: 'chop',
-        progress: 0,
-        goal: 5,
-        done: false
-      };
-    }
+    ensureQuests(playerData);
   } else {
     const inventory = Array(28).fill(null);
 
@@ -904,14 +1175,7 @@ wss.on('connection', (ws, req) => {
         woodcutting: 1
       },
       woodcuttingXp: 0,
-      quest: {
-        id: 'starter',
-        title: "Bob's first job",
-        stage: 'chop',
-        progress: 0,
-        goal: 5,
-        done: false
-      },
+      quests: defaultQuests(),
       equipment: {
         head: null,
         weapon: null,
@@ -939,14 +1203,20 @@ wss.on('connection', (ws, req) => {
     world: WORLD
   }, publicFields));
 
+  ensureQuests(playerData);
   sendQuestUpdate(ws, playerData);
 
-  if (!playerData.quest.done) {
+  if (!playerData.quests.starter.done) {
     ws.send(JSON.stringify({
       type: 'SERVER_MSG',
-      text: playerData.quest.stage === 'chop'
+      text: playerData.quests.starter.stage === 'chop'
         ? "Quest: Chop 5 trees, then talk to Shopkeeper Bob."
         : "Quest: Talk to Shopkeeper Bob to finish your job."
+    }));
+  } else {
+    ws.send(JSON.stringify({
+      type: 'SERVER_MSG',
+      text: 'Town tip: Talk to Guard Captain Mira and Elder Rowan for more quests.'
     }));
   }
 
@@ -1172,10 +1442,10 @@ wss.on('connection', (ws, req) => {
         if (
           npc &&
           npc.alive &&
-          npc.type === 'shopkeeper' &&
+          isFriendlyNpc(npc) &&
           Math.hypot(p.x - npc.x, p.y - npc.y) < 4
         ) {
-          tryCompleteStarterQuest(p, ws);
+          talkToNpc(p, npc, ws);
           rememberPlayer(p);
           saveAccountsToDisk();
           broadcastWorld();
@@ -1239,7 +1509,7 @@ setInterval(() => {
   });
 
   npcs.forEach(npc => {
-    if (!npc.alive || npc.type === 'shopkeeper') return;
+    if (!npc.alive || isFriendlyNpc(npc)) return;
 
     if (
       npc.x !== npc.targetX ||
@@ -1394,6 +1664,10 @@ setInterval(() => {
             y: Math.round(npc.y)
           });
         });
+
+        if (isOrc) {
+          advanceOrcHunt(p, getPlayerSocket(p.id));
+        }
 
         broadcast({
           type: 'GROUND_UPDATE',

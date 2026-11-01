@@ -974,7 +974,8 @@ const state = {
   trees: [],
   shopStock: [],
   popups: [],
-  quest: null
+  quest: null,
+  quests: null
 };
 
 // --- PROCEDURAL WEB AUDIO ENGINE & BGM ZONES ---
@@ -1249,12 +1250,19 @@ socket.onmessage = event => {
       }
     } else if (data.type === 'SERVER_MSG') {
       addChat(data.text, 'system');
-      if (typeof data.text === 'string' && data.text.includes("Fine work")) {
+      if (
+        typeof data.text === 'string' &&
+        (data.text.includes('Fine work') ||
+          data.text.includes('Solid work') ||
+          data.text.includes('These will keep us warm'))
+      ) {
         showFeedbackToast('Quest complete!', 'levelup');
         playSFX('levelup');
       }
     } else if (data.type === 'QUEST_UPDATE') {
-      state.quest = data.quest || null;
+      state.quests = data.quests || null;
+      // Keep legacy field for any old UI paths.
+      state.quest = data.quests?.starter || data.quest || null;
       renderQuestLog();
     } else if (data.type === 'CHAT_MSG') {
       addChat(`${data.sender}: ${data.text}`);
@@ -1264,35 +1272,58 @@ socket.onmessage = event => {
   }
 };
 
+function questStepText(q) {
+  if (!q) return '';
+  if (q.stage === 'chop') {
+    return `Chop ${q.goal} trees (${q.progress}/${q.goal}), then talk to Bob.`;
+  }
+  if (q.stage === 'deliver') return 'Talk to Shopkeeper Bob for your reward.';
+  if (q.stage === 'available') return `Talk to ${q.giver} to start.`;
+  if (q.stage === 'kill') {
+    return `Slay ${q.goal} orcs (${q.progress}/${q.goal}), then return to Mira.`;
+  }
+  if (q.stage === 'return') return 'Report back to Guard Captain Mira.';
+  if (q.stage === 'gather') {
+    return `Bring ${q.goal} logs to Elder Rowan (${q.progress || 0}/${q.goal}).`;
+  }
+  return q.title || 'Quest';
+}
+
 function renderQuestLog() {
   const panel = document.getElementById('quest-log');
   const step = document.getElementById('quest-step');
   const fill = document.getElementById('quest-fill');
-  const q = state.quest;
+  const quests = state.quests;
 
   if (!panel || !step || !fill) return;
 
-  if (!q || q.done) {
+  const active = quests
+    ? Object.values(quests).filter(q =>
+        q && !q.done && q.stage !== 'locked' && q.stage !== 'done'
+      )
+    : (state.quest && !state.quest.done ? [state.quest] : []);
+
+  if (!active.length) {
     panel.classList.remove('active');
     return;
   }
 
   panel.classList.add('active');
+  const primary = active[0];
   const title = panel.querySelector('.q-title');
-  if (title) title.textContent = q.title || 'Quest';
-
-  if (q.stage === 'chop') {
-    step.textContent =
-      `Chop ${q.goal} trees (${q.progress}/${q.goal}), then talk to Bob.`;
-    fill.style.width =
-      Math.max(0, Math.min(100, (q.progress / Math.max(1, q.goal)) * 100)) + '%';
-  } else if (q.stage === 'deliver') {
-    step.textContent = 'Talk to Shopkeeper Bob for your reward.';
-    fill.style.width = '100%';
-  } else {
-    step.textContent = 'All done.';
-    fill.style.width = '100%';
+  if (title) {
+    title.textContent = active.length > 1
+      ? `${primary.title} (+${active.length - 1})`
+      : (primary.title || 'Quest');
   }
+
+  step.textContent = active.map(questStepText).join(' · ');
+  const goal = Math.max(1, primary.goal || 1);
+  const progress = primary.progress || 0;
+  const pct = (primary.stage === 'deliver' || primary.stage === 'return')
+    ? 100
+    : Math.max(0, Math.min(100, (progress / goal) * 100));
+  fill.style.width = pct + '%';
 }
 
 function addChat(text, type = '') {
@@ -2174,15 +2205,18 @@ canvas.addEventListener('click', event => {
   );
 
   if (npc) {
-    if (npc.type === 'shopkeeper') {
+    if (npc.type === 'shopkeeper' || npc.type === 'questgiver') {
       send({ type: 'TALK_NPC', targetId: npc.id });
-      const shop = document.getElementById('shop-win');
-      const inventory = document.getElementById('inventory-win');
-
-      shop.classList.add('active');
-      inventory.classList.add('active');
-      bringToFront(shop);
-      addChat("Opened Bob's General Store!", 'system');
+      if (npc.type === 'shopkeeper') {
+        const shop = document.getElementById('shop-win');
+        const inventory = document.getElementById('inventory-win');
+        shop.classList.add('active');
+        inventory.classList.add('active');
+        bringToFront(shop);
+        addChat("Opened Bob's General Store!", 'system');
+      } else {
+        addChat(`Talking to ${npc.name}…`, 'system');
+      }
     } else {
       send({ type: 'ATTACK', targetId: npc.id });
     }
@@ -2294,10 +2328,20 @@ function isShopBridge(x, y) {
   return x >= 35 && x <= 37 && y >= 19 && y <= 21;
 }
 
+function isTownPath(x, y) {
+  if (x === 22 || x === 23 || y === 22) return true;
+  if (x === 16 || y === 26) return true;
+  if (x === 28 && y >= 18 && y <= 26) return true;
+  if (y === 18 && x >= 16 && x <= 36) return true;
+  if (y === 30 && x >= 22 && x <= 50) return true;
+  if (x === 48 && y >= 22 && y <= 32) return true;
+  return false;
+}
+
 function tileAt(x, y) {
   let tile = y < WORLD.wildernessBoundaryY ? 5 : 0;
 
-  if (x === 22 || x === 23 || y === 22) tile = 1;
+  if (isTownPath(x, y)) tile = 1;
 
   if (
     (y === -20 && x >= 22 && x <= 27) ||
@@ -3066,6 +3110,22 @@ const SPRITE_ART = {
     p.px(33, 8, 2, 2, '#f2e08a');
   },
 
+  questgiver(p) {
+    const cloak = '#3a5a48';
+    const skinTone = '#c99670';
+
+    p.part('#2e2418', shapes(sRect(24, 56, 8, 6), sRect(33, 56, 8, 6)));
+    p.part(cloak, sPoly([[20, 28], [44, 28], [48, 58], [16, 58]]));
+    p.part('#c4a45a', sRect(22, 34, 20, 3));
+    p.part(skinTone, shapes(sRect(18, 34, 6, 14), sRect(40, 34, 6, 14)));
+    p.part(skinTone, sEllipse(32, 22, 9, 9));
+    p.px(28, 21, 2, 2, '#1a120c');
+    p.px(34, 21, 2, 2, '#1a120c');
+    p.px(30, 25, 4, 2, '#8a5a40');
+    p.part('#2a2218', sEllipse(32, 14, 10, 4));
+    p.px(26, 12, 12, 2, '#c4a45a');
+  },
+
   giant(p) {
     const rock = '#6f7d5c';
     const moss = '#4b7a3a';
@@ -3120,6 +3180,7 @@ const SPRITE_SIZES = {
   orc: [64, 64],
   warrior: [64, 64],
   shopkeeper: [64, 64],
+  questgiver: [64, 64],
   giant: [96, 110]
 };
 
@@ -3335,7 +3396,9 @@ function drawMinimap() {
     const sx = (npc.x - originX) * scale;
     const sy = (npc.y - originY) * scale;
     if (sx < 0 || sy < 0 || sx >= size || sy >= size) return;
-    m.fillStyle = npc.type === 'shopkeeper' ? '#f0c868' : '#d4543c';
+    m.fillStyle = (npc.type === 'shopkeeper' || npc.type === 'questgiver')
+      ? '#f0c868'
+      : '#d4543c';
     m.fillRect(sx - 1, sy - 1, 3, 3);
   });
 
@@ -3548,8 +3611,12 @@ function draw(now) {
         y: top - 4,
         color: isMe ? '#facc75' : '#8fc9ed'
       });
-    } else if (entity.type === 'shopkeeper') {
-      const top = drawSprite(x, y, 'shopkeeper');
+    } else if (entity.type === 'shopkeeper' || entity.type === 'questgiver') {
+      const top = drawSprite(
+        x,
+        y,
+        entity.type === 'questgiver' ? 'questgiver' : 'shopkeeper'
+      );
 
       labels.push({
         text: entity.name,
