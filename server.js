@@ -219,8 +219,69 @@ function isFriendlyNpc(npc) {
   return npc && (npc.type === 'shopkeeper' || npc.type === 'questgiver');
 }
 
+// Building footprints: walls block movement; door tiles are walkable.
+const BUILDINGS = [
+  {
+    name: "Bob's Shop",
+    minX: 32, maxX: 40, minY: 12, maxY: 18,
+    doorX: 36, doorY: 18
+  },
+  {
+    name: 'Barracks',
+    minX: 18, maxX: 26, minY: 14, maxY: 20,
+    doorX: 22, doorY: 20
+  },
+  {
+    name: "Elder's Hall",
+    minX: 12, maxX: 18, minY: 24, maxY: 29,
+    doorX: 15, doorY: 24
+  },
+  {
+    name: 'Farm Shed',
+    minX: 46, maxX: 52, minY: 28, maxY: 33,
+    doorX: 49, doorY: 28
+  },
+  {
+    name: 'Stables',
+    minX: 26, maxX: 31, minY: 19, maxY: 24,
+    doorX: 28, doorY: 24
+  }
+];
+
+function buildingAt(tx, ty) {
+  for (const b of BUILDINGS) {
+    if (tx >= b.minX && tx <= b.maxX && ty >= b.minY && ty <= b.maxY) {
+      return b;
+    }
+  }
+  return null;
+}
+
+function isBuildingWall(tx, ty) {
+  const b = buildingAt(tx, ty);
+  if (!b) return false;
+  if (tx === b.doorX && ty === b.doorY) return false;
+  const wall =
+    tx === b.minX ||
+    tx === b.maxX ||
+    ty === b.minY ||
+    ty === b.maxY;
+  return wall;
+}
+
+function isBuildingInterior(tx, ty) {
+  const b = buildingAt(tx, ty);
+  if (!b) return false;
+  return (
+    tx > b.minX &&
+    tx < b.maxX &&
+    ty > b.minY &&
+    ty < b.maxY
+  );
+}
+
 const npcs = [
-  // --- Friendly town folk ---
+  // --- Friendly town folk (inside buildings) ---
   makeNpc(
     3, 'Shopkeeper Bob',
     36, 15, 100, 15,
@@ -228,103 +289,44 @@ const npcs = [
   ),
   makeNpc(
     20, 'Guard Captain Mira',
-    22, 18, 100, 20,
+    22, 17, 100, 20,
     'questgiver', 'town', 'orc_hunt'
   ),
   makeNpc(
     21, 'Elder Rowan',
-    16, 26, 80, 12,
+    15, 26, 80, 12,
     'questgiver', 'town', 'log_delivery'
   ),
   makeNpc(
     22, 'Farmer Tess',
-    48, 30, 60, 8,
+    49, 30, 60, 8,
     'questgiver', 'town', null
   ),
   makeNpc(
     23, 'Stablehand Pip',
-    28, 22, 50, 5,
+    28, 21, 50, 5,
     'questgiver', 'town', null
   ),
 
-  // --- Town / fringe monsters (spread out) ---
-  makeNpc(
-    1, 'Goblin',
-    8, 34, 12, 2,
-    'monster', 'town'
-  ),
-  makeNpc(
-    2, 'Goblin Guard',
-    52, 38, 20, 5,
-    'monster', 'town'
-  ),
-  makeNpc(
-    7, 'Orc Marauder',
-    55, 6, 35, 8,
-    'monster', 'town'
-  ),
-  makeNpc(
-    8, 'Orc Raider',
-    6, 10, 28, 7,
-    'monster', 'town'
-  ),
-  makeNpc(
-    9, 'Orc Raider',
-    60, 20, 28, 7,
-    'monster', 'town'
-  ),
-  makeNpc(
-    10, 'Goblin Scout',
-    4, 42, 14, 3,
-    'monster', 'town'
-  ),
-  makeNpc(
-    11, 'Goblin Scout',
-    62, 32, 14, 3,
-    'monster', 'town'
-  ),
-  makeNpc(
-    12, 'Wild Dog',
-    44, 44, 16, 4,
-    'monster', 'town'
-  ),
-  makeNpc(
-    13, 'Bandit',
-    10, 6, 24, 6,
-    'monster', 'town'
-  ),
-  makeNpc(
-    14, 'Goblin',
-    40, 48, 12, 2,
-    'monster', 'town'
-  ),
-  makeNpc(
-    15, 'Wild Dog',
-    12, 48, 16, 4,
-    'monster', 'town'
-  ),
+  // --- Fringe monsters: dry land, away from buildings ---
+  makeNpc(1, 'Goblin', 25, 5, 12, 2, 'monster', 'town'),
+  makeNpc(2, 'Goblin Guard', 50, 14, 20, 5, 'monster', 'town'),
+  makeNpc(7, 'Orc Marauder', 55, 5, 35, 8, 'monster', 'town'),
+  makeNpc(8, 'Orc Raider', 5, 10, 28, 7, 'monster', 'town'),
+  makeNpc(9, 'Orc Raider', 65, 5, 28, 7, 'monster', 'town'),
+  makeNpc(10, 'Goblin Scout', 5, 21, 14, 3, 'monster', 'town'),
+  makeNpc(11, 'Goblin Scout', 60, 14, 14, 3, 'monster', 'town'),
+  makeNpc(12, 'Wild Dog', 45, 5, 16, 4, 'monster', 'town'),
+  makeNpc(13, 'Bandit', 15, 5, 24, 6, 'monster', 'town'),
+  makeNpc(14, 'Goblin', 69, 24, 12, 2, 'monster', 'town'),
+  makeNpc(15, 'Wild Dog', 59, 24, 16, 4, 'monster', 'town'),
 
-  // --- Wilderness (farther north, more spacing) ---
-  makeNpc(
-    4, 'Hobgoblin Brute',
-    20, -18, 45, 10,
-    'monster', 'wilderness'
-  ),
-  makeNpc(
-    5, 'Moss Giant',
-    42, -30, 60, 12,
-    'monster', 'wilderness'
-  ),
-  makeNpc(
-    6, 'Dark Warrior',
-    12, -38, 50, 10,
-    'monster', 'wilderness'
-  ),
-  makeNpc(
-    16, 'Hobgoblin Brute',
-    55, -22, 45, 10,
-    'monster', 'wilderness'
-  )
+  // --- Wilderness (dry, spaced) ---
+  makeNpc(4, 'Hobgoblin Brute', 20, -18, 45, 10, 'monster', 'wilderness'),
+  makeNpc(5, 'Moss Giant', 42, -30, 60, 12, 'monster', 'wilderness'),
+  makeNpc(6, 'Dark Warrior', 12, -38, 50, 10, 'monster', 'wilderness'),
+  makeNpc(16, 'Hobgoblin Brute', 48, -15, 45, 10, 'monster', 'wilderness'),
+  makeNpc(17, 'Dark Warrior', 60, -35, 50, 10, 'monster', 'wilderness')
 ];
 
 const TREE_TYPES = {
@@ -956,13 +958,16 @@ function isShopBridge(tx, ty) {
 }
 
 function isTownPath(tx, ty) {
-  // Wider town roads: crossroads, square ring, and lanes to landmarks.
+  // Main crossroads only, plus short spurs to building doors.
   if (tx === 22 || tx === 23 || ty === 22) return true;
-  if (tx === 16 || ty === 26) return true; // elder lane
-  if (tx === 28 && ty >= 18 && ty <= 26) return true; // stablehand
-  if (ty === 18 && tx >= 16 && tx <= 36) return true; // north square
-  if (ty === 30 && tx >= 22 && tx <= 50) return true; // farmer road
-  if (tx === 48 && ty >= 22 && ty <= 32) return true;
+  // Spur to barracks door.
+  if ((tx === 22 || tx === 23) && ty >= 18 && ty <= 21) return true;
+  // Spur to elder hall door.
+  if (tx === 15 && ty >= 22 && ty <= 24) return true;
+  // Spur to farm shed door.
+  if (tx === 49 && ty >= 22 && ty <= 28) return true;
+  // Spur to stables door.
+  if (tx === 28 && ty >= 22 && ty <= 24) return true;
   return false;
 }
 
@@ -978,8 +983,11 @@ function isAuthoredGround(tx, ty) {
   }
 
   if (isShopBridge(tx, ty)) return true;
-  if (tx === 36 && ty === 18) return true;
-  if (tx > 32 && tx < 40 && ty > 12 && ty < 18) return true;
+  if (isBuildingInterior(tx, ty)) return true;
+  // Doors count as walkable ground.
+  for (const b of BUILDINGS) {
+    if (tx === b.doorX && ty === b.doorY) return true;
+  }
   return false;
 }
 
@@ -998,17 +1006,7 @@ function isWallTile(x, y) {
   const tx = Math.floor(x);
   const ty = Math.floor(y);
 
-  if (tx >= 32 && tx <= 40 && ty >= 12 && ty <= 18) {
-    const wall =
-      tx === 32 ||
-      tx === 40 ||
-      ty === 12 ||
-      ty === 18;
-
-    if (wall) {
-      return !(tx === 36 && ty === 18);
-    }
-  }
+  if (isBuildingWall(tx, ty)) return true;
 
   if (!isAuthoredGround(tx, ty) && terrainHeight(tx, ty) < WATER_LEVEL) {
     return true;
@@ -1521,21 +1519,11 @@ setInterval(() => {
 
     if (Math.random() >= NPC_WANDER_CHANCE_PER_SEC / TICK_RATE) return;
 
-    const wilderness = npc.region === 'wilderness';
-
-    // Keep each enemy close to its spawn point.
-    const minX = Math.max(5, npc.spawnX - 4);
-    const maxX = Math.min(45, npc.spawnX + 4);
-
-    const minY = Math.max(
-      wilderness ? -40 : 5,
-      npc.spawnY - 4
-    );
-
-    const maxY = Math.min(
-      wilderness ? -5 : 40,
-      npc.spawnY + 4
-    );
+    // Keep each enemy near its spawn; never into water or buildings.
+    const minX = Math.max(WORLD.minX, npc.spawnX - 5);
+    const maxX = Math.min(WORLD.maxX, npc.spawnX + 5);
+    const minY = Math.max(WORLD.minY, npc.spawnY - 5);
+    const maxY = Math.min(WORLD.maxY, npc.spawnY + 5);
 
     const x = Math.max(
       minX,
@@ -1553,7 +1541,11 @@ setInterval(() => {
       )
     );
 
-    if (!isWallTile(x, y)) {
+    if (
+      !isWallTile(x, y) &&
+      !isBuildingInterior(x, y) &&
+      terrainHeight(x, y) >= WATER_LEVEL
+    ) {
       npc.targetX = x;
       npc.targetY = y;
     }

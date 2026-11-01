@@ -2329,14 +2329,22 @@ function isShopBridge(x, y) {
 }
 
 function isTownPath(x, y) {
+  // Main crossroads only, plus short spurs to doors.
   if (x === 22 || x === 23 || y === 22) return true;
-  if (x === 16 || y === 26) return true;
-  if (x === 28 && y >= 18 && y <= 26) return true;
-  if (y === 18 && x >= 16 && x <= 36) return true;
-  if (y === 30 && x >= 22 && x <= 50) return true;
-  if (x === 48 && y >= 22 && y <= 32) return true;
+  if ((x === 22 || x === 23) && y >= 18 && y <= 21) return true;
+  if (x === 15 && y >= 22 && y <= 24) return true;
+  if (x === 49 && y >= 22 && y <= 28) return true;
+  if (x === 28 && y >= 22 && y <= 24) return true;
   return false;
 }
+
+const CLIENT_BUILDINGS = [
+  { minX: 32, maxX: 40, minY: 12, maxY: 18, doorX: 36, doorY: 18 },
+  { minX: 18, maxX: 26, minY: 14, maxY: 20, doorX: 22, doorY: 20 },
+  { minX: 12, maxX: 18, minY: 24, maxY: 29, doorX: 15, doorY: 24 },
+  { minX: 46, maxX: 52, minY: 28, maxY: 33, doorX: 49, doorY: 28 },
+  { minX: 26, maxX: 31, minY: 19, maxY: 24, doorX: 28, doorY: 24 }
+];
 
 function tileAt(x, y) {
   let tile = y < WORLD.wildernessBoundaryY ? 5 : 0;
@@ -2354,14 +2362,20 @@ function tileAt(x, y) {
   // Wooden bridge over the pond south of Bob's shop.
   if (isShopBridge(x, y)) tile = 2;
 
-  if (x >= 32 && x <= 40 && y >= 12 && y <= 18) {
-    const wall =
-      x === 32 || x === 40 ||
-      y === 12 || y === 18;
-
-    tile = wall
-      ? ((x === 36 && y === 18) ? 3 : 4)
-      : 3;
+  for (const b of CLIENT_BUILDINGS) {
+    if (x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY) {
+      const wall =
+        x === b.minX ||
+        x === b.maxX ||
+        y === b.minY ||
+        y === b.maxY;
+      if (wall) {
+        tile = (x === b.doorX && y === b.doorY) ? 3 : 4;
+      } else {
+        tile = 3;
+      }
+      break;
+    }
   }
 
   return tile;
@@ -3465,6 +3479,10 @@ function draw(now) {
 
   drawSign(25.4, 0, 'NORTH: LVL 10+', camera, true);
   drawSign(35.4, 11, "BOB'S SHOP", camera);
+  drawSign(21.2, 13, 'BARRACKS', camera);
+  drawSign(13.8, 23, "ELDER'S HALL", camera);
+  drawSign(47.8, 27, 'FARM SHED', camera);
+  drawSign(27.2, 18, 'STABLES', camera);
 
   const regionLabels = [
     ['BRUTE CLEARING', 26, -23, '#aca383'],
