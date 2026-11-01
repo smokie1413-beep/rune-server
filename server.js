@@ -94,6 +94,21 @@ const ITEM_DB = {
     buyPrice: 25, sellPrice: 12,
     stackable: false, slot: null
   },
+  orc_tusk: {
+    id: 'orc_tusk', name: 'Orc Tusk', icon: '🦷',
+    buyPrice: 80, sellPrice: 40,
+    stackable: true, slot: null
+  },
+  orc_battleaxe: {
+    id: 'orc_battleaxe', name: 'Orc Battleaxe', icon: '🪓',
+    buyPrice: 420, sellPrice: 180,
+    stackable: false, slot: 'weapon', axeTier: 2
+  },
+  orc_hide: {
+    id: 'orc_hide', name: 'Orc Hide', icon: '🟩',
+    buyPrice: 60, sellPrice: 28,
+    stackable: false, slot: null
+  },
   bread: {
     id: 'bread', name: 'Bread', icon: '🍞',
     buyPrice: 12, sellPrice: 6,
@@ -215,10 +230,41 @@ const npcs = [
     36, 15, 100, 15,
     'shopkeeper', 'town'
   ),
-  // Orc just north of Bob's shop (outside the north wall).
+  // Orc pack just north of Bob's shop.
   makeNpc(
     7, 'Orc Marauder',
     36, 9, 35, 8,
+    'monster', 'town'
+  ),
+  makeNpc(
+    8, 'Orc Raider',
+    33, 8, 28, 7,
+    'monster', 'town'
+  ),
+  makeNpc(
+    9, 'Orc Raider',
+    39, 8, 28, 7,
+    'monster', 'town'
+  ),
+  // Extra town threats near the roads / fields.
+  makeNpc(
+    10, 'Goblin Scout',
+    14, 20, 14, 3,
+    'monster', 'town'
+  ),
+  makeNpc(
+    11, 'Goblin Scout',
+    42, 24, 14, 3,
+    'monster', 'town'
+  ),
+  makeNpc(
+    12, 'Wild Dog',
+    20, 16, 16, 4,
+    'monster', 'town'
+  ),
+  makeNpc(
+    13, 'Bandit',
+    28, 12, 24, 6,
     'monster', 'town'
   ),
 
@@ -1310,16 +1356,29 @@ setInterval(() => {
         p.isAttacking = false;
 
         const drops = ['bones'];
+        const isOrc = npc.name.includes('Orc');
+        let coinCount = 15 + Math.floor(Math.random() * 20);
 
-        if (Math.random() < 0.7) drops.push('coins');
+        if (Math.random() < 0.75) drops.push('coins');
 
         // Food drops let players keep fighting longer.
-        if (Math.random() < (npc.level >= 10 ? 0.35 : 0.2)) {
+        if (Math.random() < (npc.level >= 10 ? 0.35 : isOrc ? 0.3 : 0.2)) {
           drops.push('cooked_meat');
         }
 
-        if (npc.level >= 10 && Math.random() < 0.15) {
+        if (isOrc) {
+          coinCount = 40 + Math.floor(Math.random() * 40);
+          if (Math.random() < 0.85) drops.push('orc_tusk');
+          if (Math.random() < 0.55) drops.push('orc_hide');
+          // Marauder has a real chance at the battleaxe; raiders rarer.
+          const axeChance = npc.name.includes('Marauder') ? 0.28 : 0.12;
+          if (Math.random() < axeChance) drops.push('orc_battleaxe');
+          if (Math.random() < 0.2) drops.push('health_potion');
+        } else if (npc.level >= 10 && Math.random() < 0.15) {
           drops.push('rune_scimitar');
+        } else if (npc.name.includes('Bandit') && Math.random() < 0.35) {
+          drops.push('iron_sword');
+          coinCount = 30 + Math.floor(Math.random() * 25);
         } else if (Math.random() < 0.3) {
           drops.push('goblin_hide');
         }
@@ -1330,7 +1389,7 @@ setInterval(() => {
             itemId,
             name: ITEM_DB[itemId].name,
             icon: ITEM_DB[itemId].icon,
-            count: itemId === 'coins' ? 50 : 1,
+            count: itemId === 'coins' ? coinCount : 1,
             x: Math.round(npc.x),
             y: Math.round(npc.y)
           });
