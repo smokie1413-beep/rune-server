@@ -242,9 +242,10 @@ const BUILDINGS = [
     doorX: 49, doorY: 28
   },
   {
+    // On the main east-west road, between barracks and Bob's shop.
     name: 'Stables',
-    minX: 26, maxX: 31, minY: 19, maxY: 24,
-    doorX: 28, doorY: 24
+    minX: 27, maxX: 31, minY: 16, maxY: 22,
+    doorX: 29, doorY: 22
   }
 ];
 
@@ -304,7 +305,7 @@ const npcs = [
   ),
   makeNpc(
     23, 'Stablehand Pip',
-    28, 21, 50, 5,
+    29, 19, 50, 5,
     'questgiver', 'town', null
   ),
 
@@ -966,8 +967,6 @@ function isTownPath(tx, ty) {
   if (tx === 15 && ty >= 22 && ty <= 24) return true;
   // Spur to farm shed door.
   if (tx === 49 && ty >= 22 && ty <= 28) return true;
-  // Spur to stables door.
-  if (tx === 28 && ty >= 22 && ty <= 24) return true;
   return false;
 }
 

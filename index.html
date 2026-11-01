@@ -2334,7 +2334,6 @@ function isTownPath(x, y) {
   if ((x === 22 || x === 23) && y >= 18 && y <= 21) return true;
   if (x === 15 && y >= 22 && y <= 24) return true;
   if (x === 49 && y >= 22 && y <= 28) return true;
-  if (x === 28 && y >= 22 && y <= 24) return true;
   return false;
 }
 
@@ -2343,7 +2342,7 @@ const CLIENT_BUILDINGS = [
   { minX: 18, maxX: 26, minY: 14, maxY: 20, doorX: 22, doorY: 20 },
   { minX: 12, maxX: 18, minY: 24, maxY: 29, doorX: 15, doorY: 24 },
   { minX: 46, maxX: 52, minY: 28, maxY: 33, doorX: 49, doorY: 28 },
-  { minX: 26, maxX: 31, minY: 19, maxY: 24, doorX: 28, doorY: 24 }
+  { minX: 27, maxX: 31, minY: 16, maxY: 22, doorX: 29, doorY: 22 }
 ];
 
 function tileAt(x, y) {
@@ -3482,7 +3481,7 @@ function draw(now) {
   drawSign(21.2, 13, 'BARRACKS', camera);
   drawSign(13.8, 23, "ELDER'S HALL", camera);
   drawSign(47.8, 27, 'FARM SHED', camera);
-  drawSign(27.2, 18, 'STABLES', camera);
+  drawSign(28.2, 15, 'STABLES', camera);
 
   const regionLabels = [
     ['BRUTE CLEARING', 26, -23, '#aca383'],
