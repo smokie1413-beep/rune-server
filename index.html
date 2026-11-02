@@ -3219,6 +3219,58 @@ const SPRITE_ART = {
     p.px(35, 34, 2, 2, '#eee5bf');
   },
 
+  // Side-facing wild dog (brown fur, not a goblin).
+  dog(p) {
+    const fur = '#8a6238';
+    const dark = '#5a3e24';
+    const belly = '#c4a06a';
+
+    // Legs
+    p.part(dark, shapes(
+      sRect(18, 48, 6, 12),
+      sRect(28, 48, 6, 12),
+      sRect(38, 48, 6, 12),
+      sRect(48, 48, 6, 12)
+    ));
+    p.part('#3a2814', shapes(
+      sRect(17, 58, 8, 4),
+      sRect(27, 58, 8, 4),
+      sRect(37, 58, 8, 4),
+      sRect(47, 58, 8, 4)
+    ));
+
+    // Body
+    p.part(fur, sEllipse(34, 40, 22, 14));
+    p.part(belly, sEllipse(34, 44, 16, 8));
+    p.part(dark, sRect(20, 34, 28, 6));
+
+    // Tail
+    p.part(fur, sPoly([[12, 36], [4, 28], [8, 36], [14, 42]]));
+    p.part(dark, sPoly([[8, 30], [2, 24], [6, 32]]));
+
+    // Neck + head
+    p.part(fur, sEllipse(50, 32, 10, 9));
+    p.part(fur, sEllipse(56, 28, 11, 9));
+    p.part(belly, sEllipse(58, 30, 6, 5));
+
+    // Snout
+    p.part(belly, sPoly([[62, 28], [72, 30], [62, 34]]));
+    p.px(70, 29, 3, 3, '#2a1a10');
+    p.px(64, 34, 6, 2, '#2a1a10');
+
+    // Ears
+    p.part(dark, sPoly([[50, 20], [46, 10], [54, 18]]));
+    p.part(dark, sPoly([[58, 18], [56, 8], [62, 18]]));
+    p.part('#c49a6a', sPoly([[50, 18], [48, 12], [52, 18]]));
+
+    // Eye
+    p.px(58, 26, 3, 3, '#f2d35a');
+    p.px(59, 27, 2, 2, '#1a1208');
+
+    // Collar scar / mark
+    p.part('#6a2a2a', sRect(46, 34, 10, 3));
+  },
+
   brute(p) {
     const skin = '#5e8f45';
 
@@ -3451,6 +3503,7 @@ const SPRITE_ART = {
 const SPRITE_SIZES = {
   hero: [64, 64],
   goblin: [64, 64],
+  dog: [64, 64],
   brute: [64, 64],
   orc: [64, 64],
   warrior: [64, 64],
@@ -3908,6 +3961,7 @@ function draw(now) {
       let sprite = 'goblin';
 
       if (giant) sprite = 'giant';
+      else if (entity.name.includes('Dog')) sprite = 'dog';
       else if (entity.name.includes('Warrior') || entity.name.includes('Bandit')) {
         sprite = 'warrior';
       } else if (entity.name.includes('Orc')) sprite = 'orc';
