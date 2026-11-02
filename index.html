@@ -2338,12 +2338,36 @@ function isTownPath(x, y) {
 }
 
 const CLIENT_BUILDINGS = [
-  { minX: 32, maxX: 40, minY: 12, maxY: 18, doorX: 36, doorY: 18 },
-  { minX: 18, maxX: 26, minY: 14, maxY: 20, doorX: 22, doorY: 20 },
-  { minX: 12, maxX: 18, minY: 24, maxY: 29, doorX: 15, doorY: 24 },
-  { minX: 46, maxX: 52, minY: 28, maxY: 33, doorX: 49, doorY: 28 },
-  { minX: 27, maxX: 31, minY: 16, maxY: 22, doorX: 29, doorY: 22 }
+  {
+    id: 'shop', name: "Bob's Shop",
+    minX: 32, maxX: 40, minY: 12, maxY: 18, doorX: 36, doorY: 18
+  },
+  {
+    id: 'barracks', name: 'Barracks',
+    minX: 18, maxX: 26, minY: 14, maxY: 20, doorX: 22, doorY: 20
+  },
+  {
+    id: 'elder', name: "Elder's Hall",
+    minX: 12, maxX: 18, minY: 24, maxY: 29, doorX: 15, doorY: 24
+  },
+  {
+    id: 'farm', name: 'Farm Shed',
+    minX: 46, maxX: 52, minY: 28, maxY: 33, doorX: 49, doorY: 28
+  },
+  {
+    id: 'stables', name: 'Stables',
+    minX: 27, maxX: 31, minY: 16, maxY: 22, doorX: 29, doorY: 22
+  }
 ];
+
+function getBuildingAt(x, y) {
+  for (const b of CLIENT_BUILDINGS) {
+    if (x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY) {
+      return b;
+    }
+  }
+  return null;
+}
 
 function tileAt(x, y) {
   let tile = y < WORLD.wildernessBoundaryY ? 5 : 0;
@@ -2380,6 +2404,208 @@ function tileAt(x, y) {
   return tile;
 }
 
+// Paint props onto interior / wall tiles for each building type.
+function decorateBuildingTile(paint, x, y, b, tile, r, rnd, T) {
+  const lx = x - b.minX;
+  const ly = y - b.minY;
+  const isDoor = x === b.doorX && y === b.doorY;
+  const onWall = tile === 4;
+  const interior = tile === 3 && !isDoor;
+
+  if (isDoor) {
+    // Doorway planks + mat.
+    r(10, 0, T - 20, T, '#4a3218');
+    r(14, 4, T - 28, T - 8, '#6b4a28');
+    r(18, T - 18, T - 36, 14, '#3a2814');
+    r(22, T - 12, 8, 4, '#c9a85a');
+    return;
+  }
+
+  if (onWall) {
+    // Windows / hanging gear by building.
+    if (b.id === 'shop' && (ly === 0 || ly === b.maxY - b.minY) && lx > 1 && lx < b.maxX - b.minX - 1) {
+      r(18, 16, 28, 28, '#1a2430');
+      r(22, 20, 20, 20, '#6a9ab8');
+      r(22, 20, 20, 3, '#8ab8d0');
+      r(30, 20, 2, 20, '#2a3848');
+      r(22, 28, 20, 2, '#2a3848');
+    }
+    if (b.id === 'barracks' && lx > 0 && lx < b.maxX - b.minX) {
+      if (rnd(3) === 0) {
+        r(20, 12, 24, 36, '#5a4630');
+        r(24, 16, 16, 12, '#8a96a3');
+        r(28, 30, 8, 14, '#6e5533');
+      }
+    }
+    if (b.id === 'elder' && ly === 0 && lx > 0 && lx < b.maxX - b.minX) {
+      r(16, 14, 32, 30, '#2a2018');
+      r(20, 18, 24, 22, '#3d6a8a');
+      r(20, 18, 24, 4, '#c9b070');
+    }
+    if (b.id === 'stables' && (lx === 0 || lx === b.maxX - b.minX)) {
+      r(8, 20, 48, 8, '#6b4a28');
+      r(12, 28, 40, 4, '#8b6239');
+    }
+    if (b.id === 'farm' && ly === 0) {
+      r(16, 18, 32, 20, '#4a3420');
+      r(20, 22, 24, 12, '#2a1c10');
+    }
+    return;
+  }
+
+  if (!interior) return;
+
+  if (b.id === 'shop') {
+    // Floor runner
+    if (lx === 4) r(20, 0, 24, T, '#6a3a28');
+    // Back shelves
+    if (ly === 1) {
+      r(4, 4, T - 8, 36, '#4a3218');
+      r(8, 8, 14, 12, '#6a8a4a');
+      r(26, 8, 12, 12, '#8a4a4a');
+      r(42, 8, 14, 12, '#4a6a8a');
+      r(8, 24, 16, 10, '#c9a85a');
+      r(30, 24, 16, 10, '#d0c8b0');
+    }
+    // Counter
+    if (ly === 3 && lx >= 2 && lx <= 6) {
+      r(4, 20, T - 8, 28, '#5a3b24');
+      r(4, 20, T - 8, 6, '#8b6239');
+      r(8, 28, 16, 12, '#c9a85a');
+      r(40, 30, 12, 10, '#e8d080');
+    }
+    // Side crates / barrels
+    if ((lx === 1 || lx === 7) && ly === 2) {
+      r(12, 16, 40, 40, '#6b4a28');
+      r(16, 12, 32, 12, '#8b6239');
+      r(20, 20, 8, 8, '#3a2814');
+    }
+    if (lx === 3 && ly === 4) {
+      r(18, 28, 28, 24, '#5a3a20');
+      r(22, 32, 8, 8, '#d4af37');
+      r(34, 34, 6, 6, '#d4af37');
+    }
+  }
+
+  if (b.id === 'barracks') {
+    // Beds along sides
+    if ((lx === 1 || lx === 7) && ly >= 1 && ly <= 3) {
+      r(8, 8, 48, 48, '#3a2a1c');
+      r(12, 12, 40, 20, '#6a4a8a');
+      r(12, 34, 40, 16, '#8a6aaa');
+      r(16, 8, 32, 6, '#d0c8b0');
+    }
+    // Center table
+    if (lx === 4 && ly === 2) {
+      r(10, 16, 44, 32, '#5a3b24');
+      r(10, 16, 44, 6, '#8b6239');
+      r(28, 24, 8, 8, '#c9a85a');
+    }
+    // Weapon rack (back)
+    if (ly === 1 && lx >= 3 && lx <= 5) {
+      r(8, 4, T - 16, 8, '#3a2a1c');
+      r(16, 8, 4, 40, '#8a96a3');
+      r(28, 10, 4, 36, '#8a96a3');
+      r(40, 8, 4, 40, '#8a96a3');
+      r(14, 12, 8, 6, '#c9a85a');
+      r(36, 14, 8, 6, '#c9a85a');
+    }
+    // Footlocker
+    if (lx === 4 && ly === 4) {
+      r(16, 28, 32, 24, '#4a3420');
+      r(16, 28, 32, 6, '#6b4a28');
+      r(28, 34, 8, 6, '#c9a85a');
+    }
+  }
+
+  if (b.id === 'elder') {
+    // Rug
+    if (lx >= 2 && lx <= 4 && ly >= 2 && ly <= 3) {
+      r(4, 4, T - 8, T - 8, '#6a2a2a');
+      r(10, 10, T - 20, T - 20, '#8a3a3a');
+      r(16, 16, T - 32, T - 32, '#c9a85a');
+    }
+    // Bookshelves back wall
+    if (ly === 1) {
+      r(4, 2, T - 8, 44, '#3a2818');
+      for (let i = 0; i < 3; i++) {
+        r(8, 6 + i * 12, T - 16, 10, '#5a3b24');
+        r(12, 8 + i * 12, 10, 6, '#8a4a4a');
+        r(28, 8 + i * 12, 12, 6, '#4a6a8a');
+        r(44, 8 + i * 12, 10, 6, '#6a8a4a');
+      }
+    }
+    // Lectern / candle
+    if (lx === 3 && ly === 2) {
+      r(20, 18, 24, 36, '#4a3218');
+      r(24, 12, 16, 12, '#6b4a28');
+      r(28, 6, 8, 10, '#e8d080');
+      r(30, 2, 4, 6, '#ff8844');
+    }
+    // Stool
+    if (lx === 2 && ly === 3) {
+      r(22, 28, 20, 20, '#5a3b24');
+      r(26, 24, 12, 8, '#8b6239');
+    }
+  }
+
+  if (b.id === 'farm') {
+    // Dirtier floor wash
+    r(0, 0, T, T, 'rgba(60,50,30,.25)');
+    // Hay piles
+    if ((lx === 1 || lx === 5) && ly === 1) {
+      r(8, 20, 48, 36, '#c4a06a');
+      r(12, 12, 40, 20, '#d8b878');
+      r(18, 8, 28, 12, '#e8d090');
+    }
+    // Sacks
+    if (lx === 3 && ly === 2) {
+      r(12, 20, 40, 36, '#8a7a50');
+      r(16, 16, 32, 12, '#a09060');
+      r(24, 28, 8, 8, '#5a4a28');
+    }
+    // Tools / pitchfork
+    if (lx === 5 && ly === 3) {
+      r(30, 8, 4, 48, '#6b4a28');
+      r(22, 8, 20, 6, '#8a96a3');
+      r(18, 4, 6, 14, '#8a96a3');
+      r(38, 4, 6, 14, '#8a96a3');
+    }
+    // Barrel
+    if (lx === 1 && ly === 3) {
+      r(16, 16, 32, 40, '#5a3b24');
+      r(16, 16, 32, 8, '#8b6239');
+      r(16, 36, 32, 6, '#3a2814');
+    }
+  }
+
+  if (b.id === 'stables') {
+    // Straw floor
+    r(0, 0, T, T, 'rgba(180,150,70,.3)');
+    for (let i = 0; i < 8; i++) {
+      r(rnd(56), rnd(56), 6 + rnd(10), 2, '#c4a06a');
+    }
+    // Trough along back
+    if (ly === 1) {
+      r(4, 24, T - 8, 28, '#4a3420');
+      r(8, 28, T - 16, 16, '#3a6a8a');
+      r(8, 28, T - 16, 4, '#5a8aaa');
+    }
+    // Hay bales
+    if (ly === 3 && (lx === 1 || lx === 3)) {
+      r(8, 16, 48, 40, '#c4a06a');
+      r(8, 16, 48, 10, '#d8b878');
+      r(8, 36, 48, 6, '#a08040');
+    }
+    // Hitching post
+    if (lx === 2 && ly === 4) {
+      r(28, 8, 8, 48, '#5a3b24');
+      r(16, 12, 32, 6, '#6b4a28');
+      r(20, 40, 24, 6, '#8b6239');
+    }
+  }
+}
+
 const terrainCache = new Map();
 
 function createTerrainTile(x, y) {
@@ -2406,14 +2632,32 @@ function createTerrainTile(x, y) {
   }
 
   if (tile === 4) {
-    r(0, 0, T, T, '#3a434d');
+    const bWall = getBuildingAt(x, y);
+    // Building-specific wall palette.
+    let wallBase = '#3a434d';
+    let wallTints = ['#4a5560', '#454f59', '#505b66', '#424c56'];
+    if (bWall?.id === 'shop') {
+      wallBase = '#4a3a2c';
+      wallTints = ['#5a4a38', '#6a5844', '#504030', '#6e5c48'];
+    } else if (bWall?.id === 'barracks') {
+      wallBase = '#3a4048';
+      wallTints = ['#4a5058', '#545a64', '#404650', '#5a6068'];
+    } else if (bWall?.id === 'elder') {
+      wallBase = '#3a2e24';
+      wallTints = ['#4a3c30', '#5a4a3a', '#403428', '#6a5844'];
+    } else if (bWall?.id === 'stables' || bWall?.id === 'farm') {
+      wallBase = '#4a3828';
+      wallTints = ['#5a4834', '#6a5840', '#403020', '#7a684c'];
+    }
+
+    r(0, 0, T, T, wallBase);
     for (let row = 0; row < 8; row++) {
       const offset = row % 2 ? 8 : 0;
       for (let bx = -offset; bx < T; bx += 16) {
-        const tint = ['#4a5560', '#454f59', '#505b66', '#424c56'][rnd(4)];
+        const tint = wallTints[rnd(4)];
         r(bx + 1, row * 8 + 1, 14, 6, tint);
-        r(bx + 1, row * 8 + 1, 14, 1, '#6d7a86');
-        r(bx + 1, row * 8 + 6, 14, 1, '#343c45');
+        r(bx + 1, row * 8 + 1, 14, 1, '#8d99a3');
+        r(bx + 1, row * 8 + 6, 14, 1, '#2c333b');
         if (rnd(9) === 0) r(bx + 4 + rnd(6), row * 8 + 3, 3, 1, '#2c333b');
       }
     }
@@ -2422,17 +2666,34 @@ function createTerrainTile(x, y) {
       r(rnd(48), 56, 10, 3, '#3f5a3a');
       r(rnd(48), 58, 6, 2, '#4d6b44');
     }
+    if (bWall) decorateBuildingTile(paint, x, y, bWall, 4, r, rnd, T);
     return image;
   }
 
   if (tile === 3) {
-    r(0, 0, T, T, '#5a3b24');
+    const bFloor = getBuildingAt(x, y);
+    let floorBase = '#5a3b24';
+    let floorTints = ['#74502f', '#6d4a2c', '#7a5533', '#6a472a'];
+    if (bFloor?.id === 'barracks') {
+      floorBase = '#4a4034';
+      floorTints = ['#5a5040', '#6a6050', '#504838', '#7a7060'];
+    } else if (bFloor?.id === 'elder') {
+      floorBase = '#4a3020';
+      floorTints = ['#6a4830', '#5a3c28', '#7a5840', '#4a3424'];
+    } else if (bFloor?.id === 'stables') {
+      floorBase = '#5a4828';
+      floorTints = ['#6a5834', '#7a6840', '#5a4828', '#8a7848'];
+    } else if (bFloor?.id === 'farm') {
+      floorBase = '#4a3a24';
+      floorTints = ['#5a4a30', '#6a5a38', '#4a3a24', '#7a6a44'];
+    }
+
+    r(0, 0, T, T, floorBase);
     for (let row = 0; row < 4; row++) {
       const py = row * 16;
       const joint = 8 + rnd(40);
-      const tints = ['#74502f', '#6d4a2c', '#7a5533', '#6a472a'];
-      r(0, py + 1, joint - 1, 14, tints[rnd(4)]);
-      r(joint, py + 1, T - joint, 14, tints[rnd(4)]);
+      r(0, py + 1, joint - 1, 14, floorTints[rnd(4)]);
+      r(joint, py + 1, T - joint, 14, floorTints[rnd(4)]);
       r(0, py + 1, T, 1, '#94693f');
       r(0, py + 15, T, 1, '#3e2918');
       r(joint - 1, py + 1, 1, 14, '#3e2918');
@@ -2442,6 +2703,7 @@ function createTerrainTile(x, y) {
       r(joint + 3, py + 7, 1, 1, '#2a1c11');
       r(joint - 4, py + 7, 1, 1, '#2a1c11');
     }
+    if (bFloor) decorateBuildingTile(paint, x, y, bFloor, 3, r, rnd, T);
     return image;
   }
 
